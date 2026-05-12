@@ -194,36 +194,36 @@ export default function Game() {
 
 function CharacterPreview({ custom }: { custom: CharCustom }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const DPR = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2) : 1;
-  const W = 90, H = 130;
+  // Use logical (CSS-pixel) dimensions — DPR scaling handled inside the effect
+  const W = 110, H = 175;
 
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    // Measure DPR at runtime so we always get the correct device value
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width  = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width  = W + "px";
+    canvas.style.height = H + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    // Soft background
-    const bg = ctx.createRadialGradient(W/2, H*0.6, 5, W/2, H*0.6, W*0.7);
-    bg.addColorStop(0, "rgba(255,240,255,0.12)");
+    // Soft glow background
+    const bg = ctx.createRadialGradient(W/2, H * 0.55, 6, W/2, H * 0.55, W * 0.75);
+    bg.addColorStop(0, "rgba(255,240,255,0.14)");
     bg.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
-    // Tiny ground shadow
+    // Ground shadow under feet
     ctx.fillStyle = "rgba(80,40,80,0.18)";
-    ctx.beginPath(); ctx.ellipse(W/2, H - 8, 22, 6, 0, 0, Math.PI * 2); ctx.fill();
-    // Character
-    drawPreviewChar(ctx, W / 2, H - 8, custom);
-  }, [custom, DPR]);
+    ctx.beginPath(); ctx.ellipse(W/2, H - 10, 26, 7, 0, 0, Math.PI * 2); ctx.fill();
+    // Character — cy = H-10 gives plenty of room above for hair
+    drawPreviewChar(ctx, W / 2, H - 10, custom);
+  }, [custom]); // DPR is read inside the effect so no need in deps
 
-  return (
-    <canvas
-      ref={ref}
-      width={W * DPR}
-      height={H * DPR}
-      style={{ width: W, height: H, flexShrink: 0 }}
-    />
-  );
+  // Render initial canvas at W×H; the effect will resize it correctly
+  return <canvas ref={ref} width={W} height={H} style={{ flexShrink: 0, display: "block" }} />;
 }
 
 // ── Customisation UI pieces ──────────────────────────────────────────────────

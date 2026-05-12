@@ -1011,8 +1011,9 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   }
 
   function drawCloudShape(sx: number, sy: number, w: number) {
-    // Deterministic seed from platform x/w for consistent appearance
-    let s = ((sx * 73856093) ^ (w * 19349663)) >>> 0;
+    // Seed must use WORLD x (not screen x) so the shape is stable as the camera scrolls
+    const worldX = Math.round(sx + camX);
+    let s = ((worldX * 73856093) ^ (w * 19349663)) >>> 0;
     const rng = () => { s = (s * 1664525 + 1013904223) >>> 0; return (s >>> 0) / 4294967296; };
 
     // Two rows of overlapping circles: base row + fluffy top row
