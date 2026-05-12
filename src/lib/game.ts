@@ -151,8 +151,96 @@ function buildScenery(): Scenery {
 
 const SCENERY = buildScenery();
 
+// ===== Level 2: Cloud level =====
+const CLOUD_PAL = {
+  skyTop: '#2a68b4', skyMid: '#72b8e8', skyBot: '#cce8f8',
+  sun: '#fffce0', sunGlow: 'rgba(255,252,200,0.6)',
+  cloudFar: '#d8eef8', cloudMid: '#e8f5ff',
+  platformSurf: '#f2f7ff', platformMid: '#d8e8f4', platformEdge: '#b8cce0',
+  lightMain: '#f4d820', lightDark: '#b89010', lightGlow: 'rgba(244,216,32,0.42)',
+  mist: 'rgba(160,200,240,0.38)',
+  ambient: 'rgba(80,140,210,0.07)',
+  // these keys satisfy shared drawing functions:
+  stone: '#a0b8cc', stoneDark: '#6888a0', stoneLight: '#c0d0e0',
+  moss: '#70a860', mossLight: '#90c878', grass: '#88c870',
+  spike: '#f4d820', spikeHighlight: '#fff8a0',
+  treeFar: '#5080a8', treeMid: '#306080', treeNear: '#184060',
+  waterTop: '#a0c8e8', waterBot: '#5080a8',
+};
+
+const CLOUD_PLATFORMS: PlatformDef[] = [
+  { x: 0,    w: 700,  y: 0 },
+  { x: 880,  w: 160,  y: 60 },
+  { x: 1120, w: 130,  y: 160 },
+  { x: 1360, w: 150,  y: 60 },
+  { x: 1600, w: 180,  y: 170, spikes: [{ ox: 50, n: 2 }] },
+  { x: 1900, w: 120,  y: 80 },
+  { x: 2120, w: 140,  y: 190 },
+  { x: 2380, w: 110,  y: 90 },
+  { x: 2580, w: 160,  y: 200 },
+  { x: 2860, w: 260,  y: 90,  spikes: [{ ox: 60, n: 2 }, { ox: 160, n: 2 }] },
+  { x: 3230, w: 130,  y: 180 },
+  { x: 3460, w: 100,  y: 270 },
+  { x: 3650, w: 140,  y: 170 },
+  { x: 3890, w: 110,  y: 70 },
+  { x: 4100, w: 120,  y: 170 },
+  { x: 4310, w: 100,  y: 260 },
+  { x: 4500, w: 140,  y: 160 },
+  { x: 4750, w: 200,  y: 70,  spikes: [{ ox: 60, n: 2 }] },
+  { x: 5060, w: 120,  y: 180 },
+  { x: 5280, w: 100,  y: 270 },
+  { x: 5480, w: 130,  y: 160 },
+  { x: 5710, w: 140,  y: 60 },
+  { x: 5960, w: 200,  y: 40 },
+  { x: 6270, w: 160,  y: 130 },
+  { x: 6540, w: 120,  y: 60 },
+  { x: 6760, w: 300,  y: 0 },
+  { x: 7200, w: 1400, y: 0, isStage: true },
+];
+const CLOUD_STAGE_START = 7200;
+const CLOUD_FINISH_X    = 7600;
+const CLOUD_LEVEL_END   = 8600;
+
+const CLOUD_SPIKE_DEFS: SpikePos[] = [];
+for (const p of CLOUD_PLATFORMS) {
+  if (!p.spikes) continue;
+  for (const s of p.spikes)
+    for (let i = 0; i < s.n; i++)
+      CLOUD_SPIKE_DEFS.push({ x: p.x + s.ox + i * SPIKE_W, y: p.y });
+}
+
+const CLOUD_COIN_DEFS: CoinDef[] = [];
+(function placeCloudCoins() {
+  for (const p of CLOUD_PLATFORMS) {
+    if (p.isStage) continue;
+    const count = Math.max(1, Math.floor(p.w / 140));
+    for (let i = 0; i < count; i++) {
+      const cx = p.x + 40 + (p.w - 80) * (i + 0.5) / count;
+      const cy = p.y + 110 + (i % 2) * 30;
+      let blocked = false;
+      if (p.spikes)
+        for (const s of p.spikes)
+          for (let k = 0; k < s.n; k++)
+            if (Math.abs(cx - (p.x + s.ox + k * SPIKE_W + SPIKE_W / 2)) < 30) blocked = true;
+      if (!blocked) CLOUD_COIN_DEFS.push({ x: cx, y: cy, t: Math.random() * TAU });
+    }
+  }
+})();
+
+function buildCloudScenery(): Scenery {
+  const r = seededRand(99);
+  const mountains: MountainDef[] = [];
+  for (let i = 0; i < 22; i++)
+    mountains.push({ x: r() * CLOUD_LEVEL_END * 1.3, h: 50 + r() * 110, w: 180 + r() * 420 });
+  const clouds: CloudDef[] = [];
+  for (let i = 0; i < 28; i++)
+    clouds.push({ x: r() * CLOUD_LEVEL_END, y: 20 + r() * 220, w: 80 + r() * 230, o: 0.45 + r() * 0.55 });
+  return { farTrees: [], midTrees: [], mountains, clouds, waterfalls: [], grass: [] };
+}
+const CLOUD_SCENERY = buildCloudScenery();
+
 // ===== Main factory =====
-export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks): GameControls {
+export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId: 1|2 = 1): GameControls {
   const ctx = canvas.getContext('2d')!;
   let DPR = 1, W = 0, H = 0;
 
@@ -170,6 +258,15 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks): GameCo
   window.addEventListener('resize', resize);
 
   const groundY = () => H * 0.78;
+
+  // Level-specific data (local vars shadow module-level constants where names differ)
+  const platforms    = levelId === 1 ? PLATFORMS         : CLOUD_PLATFORMS;
+  const spikeDefs    = levelId === 1 ? SPIKE_DEFS        : CLOUD_SPIKE_DEFS;
+  const levelCoinDefs = levelId === 1 ? COIN_DEFS        : CLOUD_COIN_DEFS;
+  const scenery      = levelId === 1 ? SCENERY           : CLOUD_SCENERY;
+  const stageStart   = levelId === 1 ? STAGE_START       : CLOUD_STAGE_START;
+  const finishX      = levelId === 1 ? FINISH_X          : CLOUD_FINISH_X;
+  const pal          = levelId === 1 ? PAL               : CLOUD_PAL;
 
   // Player state
   const player = {
@@ -194,7 +291,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks): GameCo
   const screenY = (wy: number, top = false) => groundY() - wy - (top ? PLAYER_H : 0);
 
   function platformAt(wx: number): PlatformDef | null {
-    for (const p of PLATFORMS) if (wx >= p.x && wx <= p.x + p.w) return p;
+    for (const p of platforms) if (wx >= p.x && wx <= p.x + p.w) return p;
     return null;
   }
 
@@ -206,7 +303,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks): GameCo
     player.winning = false; player.winT = 0;
     player.flipping = false; player.flipT = 0;
     camX = 0;
-    coins = COIN_DEFS.map(c => ({ ...c, collected: false }));
+    coins = levelCoinDefs.map(c => ({ ...c, collected: false }));
     particles = [];
     cb.onStateChange('play');
     cb.onScore(0); cb.onProgress(0);
@@ -263,7 +360,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks): GameCo
       if (player.y < -80) { loseGame(); return; }
 
       // Spike collision
-      for (const s of SPIKE_DEFS) {
+      for (const s of spikeDefs) {
         const px1 = player.x - PLAYER_W / 2 + 6, px2 = player.x + PLAYER_W / 2 - 6;
         const py1 = player.y, py2 = player.y + PLAYER_H - 4;
         if (px2 > s.x + 4 && px1 < s.x + SPIKE_W - 4 && py1 < s.y + SPIKE_H && py2 > s.y) {
@@ -280,19 +377,19 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks): GameCo
         }
       }
 
-      if (player.x >= STAGE_START + 80 && player.y >= 0) {
+      if (player.x >= stageStart + 80 && player.y >= 0) {
         gstate = 'stage'; player.winning = true; player.winT = 0;
       }
     } else if (gstate === 'stage') {
       player.winT += dt;
-      const dx = FINISH_X - player.x;
+      const dx = finishX - player.x;
       if (dx > 2) player.x += Math.max(80, dx * 1.5) * dt;
       player.vy += GRAVITY * dt; player.y -= player.vy * dt;
       const p = platformAt(player.x);
       if (p && player.y <= p.y) { player.y = p.y; player.vy = 0; }
-      if (Math.abs(player.x - FINISH_X) < 2 && player.winT > 1.4) {
+      if (Math.abs(player.x - finishX) < 2 && player.winT > 1.4) {
         if (Math.random() < 0.4) particles.push({
-          x: FINISH_X - camX + (Math.random() - 0.5) * 60,
+          x: finishX - camX + (Math.random() - 0.5) * 60,
           y: screenY(player.y, true) - 100,
           vx: (Math.random() - 0.5) * 60, vy: -20 - Math.random() * 30,
           life: 1.2, color: ['#ffd6a8','#ffb0c8','#c4a8ff','#fff2c4'][Math.floor(Math.random()*4)],
@@ -307,7 +404,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks): GameCo
     camX += (target - camX) * Math.min(1, dt * 6);
     camX = Math.max(0, camX);
     cb.onScore(Math.floor(score));
-    cb.onProgress(Math.min(1, player.x / FINISH_X));
+    cb.onProgress(Math.min(1, player.x / finishX));
   }
 
   function updateParticles(dt: number) {
@@ -342,16 +439,22 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks): GameCo
   // → platforms → spikes → coins → stage → player → particles → foregroundGrass → vignette
 
   function draw() {
-    drawSky(); drawSun(); drawClouds(); drawMountains();
-    drawWaterfalls();
-    drawFarTrees();    // parallax 0.25 — always behind platforms
-    drawMidTrees();    // parallax 0.45 — always behind platforms
-    drawGroundMist();
-    // World-scale elements (ground always in front of trees):
+    if (levelId === 1) {
+      drawSky(); drawSun(); drawClouds(); drawMountains();
+      drawWaterfalls();
+      drawFarTrees();   // parallax 0.25 — always behind platforms
+      drawMidTrees();   // parallax 0.45 — always behind platforms
+      drawGroundMist();
+    } else {
+      drawCloudSky();
+      drawCloudBackground();
+      drawCloudMist();
+    }
+    // World-scale elements — always in FRONT of all background/trees:
     drawPlatforms(); drawSpikes(); drawCoins(); drawStage();
     if (gstate !== 'start') drawPlayer();
     drawParticles();
-    drawForegroundGrass(); // tiny edge-only tufts, no parallax
+    if (levelId === 1) drawForegroundGrass();
     drawVignette();
   }
 
@@ -470,8 +573,9 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks): GameCo
   }
 
   function drawPlatforms() {
+    if (levelId === 2) { drawCloudPlatforms(); return; }
     const gy = groundY();
-    for (const p of PLATFORMS) {
+    for (const p of platforms) {
       if (p.isStage) continue;
       const sx = p.x - camX, sy = gy - p.y;
       if (sx + p.w < -20 || sx > W + 20) continue;
@@ -512,8 +616,9 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks): GameCo
   }
 
   function drawSpikes() {
+    if (levelId === 2) { drawLightnings(); return; }
     const gy = groundY();
-    for (const s of SPIKE_DEFS) {
+    for (const s of spikeDefs) {
       const sx = s.x - camX, sy = gy - s.y;
       if (sx + SPIKE_W < -10 || sx > W + 10) continue;
 
@@ -564,7 +669,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks): GameCo
   }
 
   function drawStage() {
-    const sp = PLATFORMS.find(p => p.isStage);
+    const sp = platforms.find(p => p.isStage);
     if (!sp) return;
     const gy = groundY(), sx = sp.x - camX, sy = gy - sp.y;
     if (sx + sp.w < 0 || sx > W) return;
@@ -575,7 +680,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks): GameCo
     ctx.fillStyle = '#6a4530'; ctx.fillRect(sx, stageTopY, sp.w, 6);
     ctx.fillStyle = '#9a6a48'; ctx.fillRect(sx, stageTopY, sp.w, 2);
 
-    const drapeX = FINISH_X - 220 - camX, drapeW = 520, drapeY = stageTopY - 240;
+    const drapeX = finishX - 220 - camX, drapeW = 520, drapeY = stageTopY - 240;
     ctx.fillStyle = '#2a1828'; ctx.fillRect(drapeX, drapeY, drapeW, 240);
     for (const [ox, flip] of [[ 0, 1],[ drapeW, -1]] as [number,number][]) {
       ctx.fillStyle = '#7a1f3a'; ctx.beginPath();
@@ -607,7 +712,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks): GameCo
     }
     ctx.globalAlpha = 1;
 
-    const mx = FINISH_X - camX;
+    const mx = finishX - camX;
     drawMicStand(mx, stageTopY);
     const beamA = (gstate==='stage'||gstate==='win') ? 0.3 : 0.12;
     const bg = ctx.createLinearGradient(mx, drapeY+60, mx, stageTopY);
@@ -615,8 +720,8 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks): GameCo
     ctx.fillStyle = bg; ctx.beginPath();
     ctx.moveTo(mx-12,drapeY+60); ctx.lineTo(mx+12,drapeY+60);
     ctx.lineTo(mx+140,stageTopY); ctx.lineTo(mx-140,stageTopY); ctx.closePath(); ctx.fill();
-    drawSpeaker(FINISH_X-200-camX, stageTopY);
-    drawSpeaker(FINISH_X+200-camX, stageTopY);
+    drawSpeaker(finishX-200-camX, stageTopY);
+    drawSpeaker(finishX+200-camX, stageTopY);
   }
 
   function drawMicStand(x: number, y: number) {
@@ -788,11 +893,169 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks): GameCo
     }
   }
 
+  // ── Level 2 cloud drawing functions ──────────────────────────────────────
+
+  function drawCloudSky() {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, CLOUD_PAL.skyTop); g.addColorStop(0.6, CLOUD_PAL.skyMid); g.addColorStop(1, CLOUD_PAL.skyBot);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    // Sun (high and bright)
+    const sx = W * 0.72 - camX * 0.01, sy = H * 0.14;
+    const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, 220);
+    sg.addColorStop(0, CLOUD_PAL.sunGlow); sg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = sg; ctx.fillRect(sx - 250, sy - 250, 500, 500);
+    ctx.fillStyle = CLOUD_PAL.sun; ctx.beginPath(); ctx.arc(sx, sy, 44, 0, TAU); ctx.fill();
+  }
+
+  function drawCloudBlob(x: number, y: number, w: number, h: number) {
+    ctx.beginPath();
+    ctx.ellipse(x + w*0.50, y + h*0.62, w*0.46, h*0.36, 0, 0, TAU);
+    ctx.ellipse(x + w*0.26, y + h*0.58, w*0.28, h*0.28, 0, 0, TAU);
+    ctx.ellipse(x + w*0.76, y + h*0.60, w*0.22, h*0.24, 0, 0, TAU);
+    ctx.fill();
+  }
+
+  function drawCloudBackground() {
+    // Far cloud formations (parallax 0.06)
+    ctx.fillStyle = CLOUD_PAL.cloudFar;
+    for (const c of CLOUD_SCENERY.mountains) {
+      const x = c.x * 0.12 - camX * 0.06;
+      if (x + c.w > -80 && x < W + 80) {
+        ctx.globalAlpha = 0.38;
+        drawCloudBlob(x, H * 0.45 - c.h * 0.35, c.w * 0.9, c.h * 0.55);
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    // Mid clouds (parallax 0.22)
+    ctx.fillStyle = CLOUD_PAL.cloudMid;
+    for (const c of CLOUD_SCENERY.clouds) {
+      const x = c.x * 0.22 - camX * 0.15;
+      if (x + c.w > -60 && x < W + 60) {
+        ctx.globalAlpha = c.o * 0.5;
+        drawCloudBlob(x, c.y, c.w, c.w * 0.34);
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    // Closer clouds (parallax 0.40) — more opaque
+    ctx.fillStyle = '#eef5ff';
+    for (const c of CLOUD_SCENERY.clouds) {
+      const x = c.x * 0.40 - camX * 0.30;
+      if (x + c.w * 0.7 > -40 && x < W + 40) {
+        ctx.globalAlpha = c.o * 0.38;
+        drawCloudBlob(x, c.y + H * 0.08, c.w * 0.65, c.w * 0.22);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawCloudMist() {
+    const y = groundY();
+    const g = ctx.createLinearGradient(0, y - 50, 0, y + 30);
+    g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(1, CLOUD_PAL.mist);
+    ctx.fillStyle = g; ctx.fillRect(0, y - 50, W, 80);
+  }
+
+  function drawCloudPlatforms() {
+    const gy = groundY();
+    for (const p of platforms) {
+      if (p.isStage) {
+        drawCloudStagePlatform(p, gy);
+        continue;
+      }
+      const sx = p.x - camX, sy = gy - p.y;
+      if (sx + p.w < -20 || sx > W + 20) continue;
+      drawCloudShape(sx, sy, p.w);
+    }
+  }
+
+  function drawCloudShape(sx: number, sy: number, w: number) {
+    ctx.save();
+    // Shadow under cloud
+    ctx.fillStyle = 'rgba(80,130,200,0.14)';
+    ctx.beginPath(); ctx.ellipse(sx + w/2, sy + 11, w/2 * 0.85, 10, 0, 0, TAU); ctx.fill();
+    // Main cloud body
+    ctx.fillStyle = CLOUD_PAL.platformMid;
+    ctx.beginPath(); ctx.roundRect(sx + 3, sy - 10, w - 6, 16, 8); ctx.fill();
+    ctx.fillStyle = CLOUD_PAL.platformSurf;
+    ctx.beginPath(); ctx.roundRect(sx, sy - 16, w, 18, [20, 20, 8, 8]); ctx.fill();
+    // Puff bumps
+    const nBumps = Math.max(2, Math.ceil(w / 52));
+    ctx.fillStyle = '#f6faff';
+    for (let i = 0; i < nBumps; i++) {
+      const bx = sx + 16 + (w - 32) * i / Math.max(1, nBumps - 1);
+      const hr = 13 + (i % 3) * 5;
+      ctx.beginPath(); ctx.ellipse(bx, sy - 14, hr, hr * 0.68, 0, 0, TAU); ctx.fill();
+    }
+    // Top highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fillRect(sx + 8, sy - 18, w - 16, 3);
+    ctx.restore();
+  }
+
+  function drawCloudStagePlatform(p: PlatformDef, gy: number) {
+    const sx = p.x - camX, sy = gy - p.y;
+    if (sx + p.w < 0 || sx > W) return;
+    // Very large cloud for stage — draw as stretched cloud
+    const stageTopY = sy - 6;
+    ctx.fillStyle = '#2a3060'; ctx.fillRect(sx, stageTopY, p.w, H - stageTopY); // dark base
+    // Cloud top
+    ctx.save();
+    ctx.fillStyle = CLOUD_PAL.platformMid;
+    ctx.beginPath(); ctx.roundRect(sx, stageTopY - 12, p.w, 16, [14, 14, 4, 4]); ctx.fill();
+    ctx.fillStyle = CLOUD_PAL.platformSurf;
+    ctx.fillRect(sx, stageTopY - 2, p.w, 4);
+    ctx.restore();
+  }
+
+  function drawLightnings() {
+    const gy = groundY();
+    for (const s of spikeDefs) {
+      const sx = s.x - camX, sy = gy - s.y;
+      if (sx + SPIKE_W < -10 || sx > W + 10) continue;
+      const cx = sx + SPIKE_W / 2;
+      // Glow
+      ctx.save();
+      ctx.globalAlpha = 0.32;
+      ctx.fillStyle = CLOUD_PAL.lightGlow;
+      ctx.beginPath(); ctx.arc(cx, sy - SPIKE_H * 0.5, SPIKE_W * 0.85, 0, TAU); ctx.fill();
+      ctx.restore();
+      // Bolt shape
+      ctx.fillStyle = CLOUD_PAL.lightMain;
+      ctx.beginPath();
+      ctx.moveTo(cx + 5,  sy - SPIKE_H);
+      ctx.lineTo(cx - 2,  sy - SPIKE_H * 0.56);
+      ctx.lineTo(cx + 7,  sy - SPIKE_H * 0.52);
+      ctx.lineTo(cx - 4,  sy);
+      ctx.lineTo(cx + 2,  sy - SPIKE_H * 0.48);
+      ctx.lineTo(cx - 6,  sy - SPIKE_H * 0.52);
+      ctx.closePath(); ctx.fill();
+      // Inner highlight
+      ctx.fillStyle = '#fffce0';
+      ctx.beginPath();
+      ctx.moveTo(cx + 4,  sy - SPIKE_H + 2);
+      ctx.lineTo(cx - 0,  sy - SPIKE_H * 0.60);
+      ctx.lineTo(cx + 5,  sy - SPIKE_H * 0.58);
+      ctx.closePath(); ctx.fill();
+      // Outline
+      ctx.strokeStyle = CLOUD_PAL.lightDark; ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(cx + 5,  sy - SPIKE_H);
+      ctx.lineTo(cx - 2,  sy - SPIKE_H * 0.56);
+      ctx.lineTo(cx + 7,  sy - SPIKE_H * 0.52);
+      ctx.lineTo(cx - 4,  sy);
+      ctx.stroke();
+      // Base embedded
+      ctx.fillStyle = CLOUD_PAL.lightDark; ctx.fillRect(sx + 3, sy - 4, SPIKE_W - 6, 4);
+    }
+  }
+
   function drawVignette() {
     const gr = ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.5, W/2,H/2,Math.max(W,H)*0.85);
     gr.addColorStop(0,'rgba(0,0,0,0)'); gr.addColorStop(1,'rgba(10,6,16,0.45)');
     ctx.fillStyle=gr; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle=PAL.ambient; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle=pal.ambient; ctx.fillRect(0,0,W,H);
   }
 
   // ── Game loop ──
