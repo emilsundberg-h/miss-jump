@@ -316,21 +316,21 @@ function renderMissLi(
   // Neck
   ctx.fillStyle='#f4d2b8'; ctx.fillRect(cx-3,cy-60,6,6);
 
-  // Hair back volume (drawn BEFORE head)
+  // Hair back volume (drawn BEFORE head) — stays within head circle, max hy+9 (chin level)
   ctx.fillStyle=c.hair;
   ctx.beginPath();
   ctx.moveTo(hx-10,hy-8);
-  ctx.bezierCurveTo(hx-18,hy-4,hx-18,hy+12,hx-12,hy+18);
-  ctx.lineTo(hx+8,hy+18);
-  ctx.bezierCurveTo(hx+17,hy+14,hx+17,hy+2,hx+13,hy-6);
+  ctx.bezierCurveTo(hx-18,hy-4,hx-17,hy+6,hx-12,hy+9);
+  ctx.lineTo(hx+8,hy+9);
+  ctx.bezierCurveTo(hx+17,hy+5,hx+17,hy+0,hx+13,hy-6);
   ctx.bezierCurveTo(hx+12,hy-14,hx-10,hy-16,hx-10,hy-8);
   ctx.closePath(); ctx.fill();
-  // Left side curl
+  // Left side wave — stays beside the face, does not go below chin (hy+9)
   ctx.fillStyle=c.hairMid;
   ctx.beginPath();
-  ctx.moveTo(hx-11,hy+4);
-  ctx.bezierCurveTo(hx-20,hy+8,hx-18,hy+20,hx-10,hy+22);
-  ctx.bezierCurveTo(hx-6,hy+14,hx-10,hy+6,hx-11,hy+4);
+  ctx.moveTo(hx-11,hy+2);
+  ctx.bezierCurveTo(hx-20,hy+0,hx-19,hy+7,hx-13,hy+9);
+  ctx.bezierCurveTo(hx-9,hy+6,hx-10,hy+2,hx-11,hy+2);
   ctx.fill();
 
   // Head
