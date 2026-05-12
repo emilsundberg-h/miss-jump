@@ -239,8 +239,147 @@ function buildCloudScenery(): Scenery {
 }
 const CLOUD_SCENERY = buildCloudScenery();
 
+// ===== Character customisation =====
+export interface CharCustom {
+  hair: string; hairMid: string; hairHi: string;
+  dress: string; dressTrim: string; dressAccent: string;
+  shoe: string;
+}
+export const DEFAULT_CUSTOM: CharCustom = {
+  hair: '#c87840', hairMid: '#b06828', hairHi: '#e0a868',
+  dress: '#1a1320', dressTrim: '#f7d8e0', dressAccent: '#c0394a',
+  shoe: '#1a1018',
+};
+export const HAIR_PRESETS: { key: string; label: string; swatch: string; hair: string; hairMid: string; hairHi: string }[] = [
+  { key:'auburn',  label:'Auburn',  swatch:'#c87840', hair:'#c87840', hairMid:'#b06828', hairHi:'#e0a868' },
+  { key:'blonde',  label:'Blond',   swatch:'#e8c030', hair:'#e0b820', hairMid:'#c09000', hairHi:'#f8e060' },
+  { key:'black',   label:'Svart',   swatch:'#2a1818', hair:'#1a1010', hairMid:'#100808', hairHi:'#3a2820' },
+  { key:'red',     label:'Röd',     swatch:'#c02020', hair:'#c02020', hairMid:'#900808', hairHi:'#e04040' },
+  { key:'pink',    label:'Rosa',    swatch:'#d05090', hair:'#d05090', hairMid:'#b03070', hairHi:'#f080b0' },
+  { key:'silver',  label:'Silver',  swatch:'#c4bcb4', hair:'#d0c8c0', hairMid:'#a8a0a0', hairHi:'#eceae8' },
+];
+export const DRESS_PRESETS: { key: string; label: string; swatch: string; dress: string; dressTrim: string; dressAccent: string }[] = [
+  { key:'black',  label:'Svart',     swatch:'#1a1320', dress:'#1a1320', dressTrim:'#f7d8e0', dressAccent:'#c0394a' },
+  { key:'red',    label:'Röd',       swatch:'#8a1020', dress:'#8a1020', dressTrim:'#ffd4c0', dressAccent:'#fff5c4' },
+  { key:'purple', label:'Lila',      swatch:'#4a1870', dress:'#4a1870', dressTrim:'#d4a8ff', dressAccent:'#ffd6a8' },
+  { key:'teal',   label:'Turkos',    swatch:'#1a5050', dress:'#1a5050', dressTrim:'#a0e0d8', dressAccent:'#f0e880' },
+  { key:'navy',   label:'Marinblå',  swatch:'#181870', dress:'#181870', dressTrim:'#a8c8f0', dressAccent:'#f0e8a0' },
+  { key:'gold',   label:'Guld',      swatch:'#6a4010', dress:'#6a4010', dressTrim:'#f8d860', dressAccent:'#fff8d0' },
+];
+
+/** Draw Miss Li on any canvas — used for in-game rendering and the preview. */
+export function drawPreviewChar(
+  ctx: CanvasRenderingContext2D, cx: number, cy: number, custom: CharCustom = DEFAULT_CUSTOM
+): void {
+  renderMissLi(ctx, cx, cy, 0, 0, false, false, custom);
+}
+
+function renderMissLi(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number,
+  legSwing: number, armSwing: number,
+  inAir: boolean, isStage: boolean,
+  c: CharCustom,
+): void {
+  const hx = cx, hy = cy - 70;
+
+  // Back leg
+  ctx.save(); ctx.translate(cx-6, cy-22); ctx.rotate(-legSwing*0.6);
+  ctx.fillStyle='#f4d2b8'; ctx.fillRect(-4,0,8,22);
+  ctx.fillStyle=c.shoe; ctx.fillRect(-6,18,12,6); ctx.restore();
+  // Front leg
+  ctx.save(); ctx.translate(cx+4, cy-22); ctx.rotate(legSwing*0.6);
+  ctx.fillStyle='#f4d2b8'; ctx.fillRect(-4,0,8,22);
+  ctx.fillStyle=c.shoe; ctx.fillRect(-6,18,12,6); ctx.restore();
+
+  // Skirt
+  ctx.fillStyle=c.dress; ctx.beginPath();
+  ctx.moveTo(cx-12,cy-38); ctx.lineTo(cx+12,cy-38); ctx.lineTo(cx+17,cy-22); ctx.lineTo(cx-17,cy-22);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle=c.dressTrim; ctx.fillRect(cx-17,cy-23,34,2);
+  // Torso
+  ctx.fillStyle=c.dress; ctx.beginPath();
+  ctx.moveTo(cx-11,cy-56); ctx.lineTo(cx+11,cy-56); ctx.lineTo(cx+12,cy-38); ctx.lineTo(cx-12,cy-38);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle=c.dressAccent; ctx.fillRect(cx-12,cy-40,24,2);
+
+  // Back arm
+  ctx.save(); ctx.translate(cx-10,cy-54); ctx.rotate(armSwing*0.5);
+  ctx.fillStyle='#f4d2b8'; ctx.fillRect(-3,0,6,18);
+  ctx.fillStyle=c.dress; ctx.fillRect(-4,0,8,6); ctx.restore();
+  // Front arm
+  ctx.save(); ctx.translate(cx+10,cy-54); ctx.rotate(isStage ? -0.7 : -armSwing*0.5);
+  ctx.fillStyle='#f4d2b8'; ctx.fillRect(-3,0,6,18);
+  ctx.fillStyle=c.dress; ctx.fillRect(-4,0,8,6);
+  ctx.fillStyle='#f4d2b8'; ctx.beginPath(); ctx.arc(0,18,3.5,0,TAU); ctx.fill(); ctx.restore();
+
+  // Neck
+  ctx.fillStyle='#f4d2b8'; ctx.fillRect(cx-3,cy-60,6,6);
+
+  // Hair back volume (drawn BEFORE head)
+  ctx.fillStyle=c.hair;
+  ctx.beginPath();
+  ctx.moveTo(hx-10,hy-8);
+  ctx.bezierCurveTo(hx-18,hy-4,hx-18,hy+12,hx-12,hy+18);
+  ctx.lineTo(hx+8,hy+18);
+  ctx.bezierCurveTo(hx+17,hy+14,hx+17,hy+2,hx+13,hy-6);
+  ctx.bezierCurveTo(hx+12,hy-14,hx-10,hy-16,hx-10,hy-8);
+  ctx.closePath(); ctx.fill();
+  // Left side curl
+  ctx.fillStyle=c.hairMid;
+  ctx.beginPath();
+  ctx.moveTo(hx-11,hy+4);
+  ctx.bezierCurveTo(hx-20,hy+8,hx-18,hy+20,hx-10,hy+22);
+  ctx.bezierCurveTo(hx-6,hy+14,hx-10,hy+6,hx-11,hy+4);
+  ctx.fill();
+
+  // Head
+  ctx.fillStyle='#f7d8be'; ctx.beginPath(); ctx.arc(hx,hy,11,0,TAU); ctx.fill();
+
+  // Blush
+  ctx.fillStyle='rgba(220,100,120,0.4)';
+  ctx.beginPath(); ctx.arc(hx-6,hy+3,2.5,0,TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(hx+6,hy+3,2.5,0,TAU); ctx.fill();
+
+  // Eyes
+  ctx.fillStyle='#1a1320';
+  if (isStage) {
+    ctx.strokeStyle='#1a1320'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(hx-5,hy); ctx.lineTo(hx-2,hy+1); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(hx+2,hy); ctx.lineTo(hx+5,hy+1); ctx.stroke();
+  } else {
+    ctx.fillRect(hx-5,hy-2,3,2.5); ctx.fillRect(hx+2,hy-2,3,2.5);
+    ctx.strokeStyle='#1a1320'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(hx+5,hy-2); ctx.lineTo(hx+7.5,hy-4); ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,0.85)';
+    ctx.beginPath(); ctx.arc(hx-4,hy-1,0.9,0,TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(hx+3,hy-1,0.9,0,TAU); ctx.fill();
+  }
+  // Lips
+  ctx.fillStyle='#c0394a';
+  ctx.beginPath(); ctx.moveTo(hx-3,hy+4);
+  ctx.quadraticCurveTo(hx,hy+7,hx+3,hy+4);
+  ctx.quadraticCurveTo(hx,hy+5,hx-3,hy+4); ctx.closePath(); ctx.fill();
+
+  // Front bangs (above eyes)
+  ctx.fillStyle=c.hair;
+  ctx.beginPath();
+  ctx.moveTo(hx-10,hy-5);
+  ctx.bezierCurveTo(hx-8,hy-14,hx+8,hy-14,hx+11,hy-5);
+  ctx.lineTo(hx+7,hy-5);
+  ctx.bezierCurveTo(hx+4,hy-5,hx+0,hy-5,hx-6,hy-5);
+  ctx.closePath(); ctx.fill();
+  // Crown highlight
+  ctx.fillStyle=c.hairHi;
+  ctx.beginPath(); ctx.ellipse(hx+1,hy-9,4.5,2.5,-0.3,0,TAU); ctx.fill();
+
+  // Earring
+  ctx.fillStyle='#f0d060';
+  ctx.beginPath(); ctx.arc(hx+10,hy+2,2,0,TAU); ctx.fill();
+}
+
 // ===== Main factory =====
-export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId: 1|2 = 1): GameControls {
+export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId: 1|2 = 1, custom: CharCustom = DEFAULT_CUSTOM): GameControls {
   const ctx = canvas.getContext('2d')!;
   let DPR = 1, W = 0, H = 0;
 
@@ -767,106 +906,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   }
 
   function drawCharacter(cx: number, cy: number, legSwing: number, armSwing: number, inAir: boolean) {
-    const isStage = gstate==='stage' || gstate==='win';
-    const dress='#1a1320', dressTrim='#f7d8e0', dressAccent='#c0394a';
-
-    // Back leg
-    ctx.save(); ctx.translate(cx-6, cy-22); ctx.rotate(-legSwing*0.6);
-    ctx.fillStyle='#f4d2b8'; ctx.fillRect(-4,0,8,22);
-    ctx.fillStyle='#1a1018'; ctx.fillRect(-6,18,12,6); ctx.restore();
-    // Front leg
-    ctx.save(); ctx.translate(cx+4, cy-22); ctx.rotate(legSwing*0.6);
-    ctx.fillStyle='#f4d2b8'; ctx.fillRect(-4,0,8,22);
-    ctx.fillStyle='#1a1018'; ctx.fillRect(-6,18,12,6); ctx.restore();
-
-    // Skirt
-    ctx.fillStyle=dress; ctx.beginPath();
-    ctx.moveTo(cx-12,cy-38); ctx.lineTo(cx+12,cy-38); ctx.lineTo(cx+17,cy-22); ctx.lineTo(cx-17,cy-22);
-    ctx.closePath(); ctx.fill();
-    ctx.fillStyle=dressTrim; ctx.fillRect(cx-17,cy-23,34,2);
-    // Torso
-    ctx.fillStyle=dress; ctx.beginPath();
-    ctx.moveTo(cx-11,cy-56); ctx.lineTo(cx+11,cy-56); ctx.lineTo(cx+12,cy-38); ctx.lineTo(cx-12,cy-38);
-    ctx.closePath(); ctx.fill();
-    ctx.fillStyle=dressAccent; ctx.fillRect(cx-12,cy-40,24,2);
-
-    // Back arm
-    ctx.save(); ctx.translate(cx-10,cy-54); ctx.rotate(armSwing*0.5);
-    ctx.fillStyle='#f4d2b8'; ctx.fillRect(-3,0,6,18);
-    ctx.fillStyle=dress; ctx.fillRect(-4,0,8,6); ctx.restore();
-    // Front arm
-    ctx.save(); ctx.translate(cx+10,cy-54); ctx.rotate(isStage ? -0.7 : -armSwing*0.5);
-    ctx.fillStyle='#f4d2b8'; ctx.fillRect(-3,0,6,18);
-    ctx.fillStyle=dress; ctx.fillRect(-4,0,8,6);
-    ctx.fillStyle='#f4d2b8'; ctx.beginPath(); ctx.arc(0,18,3.5,0,TAU); ctx.fill(); ctx.restore();
-
-    // Neck
-    ctx.fillStyle='#f4d2b8'; ctx.fillRect(cx-3,cy-60,6,6);
-
-    const hx=cx, hy=cy-70;
-
-    // ── HAIR LAYER 1: back volume — drawn BEFORE head so it stays behind the face ──
-    // Main mass: wraps around back of head, does NOT cross the face front
-    ctx.fillStyle='#c87840';
-    ctx.beginPath();
-    ctx.moveTo(hx-10, hy-8);
-    ctx.bezierCurveTo(hx-18, hy-4, hx-18, hy+12, hx-12, hy+18);
-    ctx.lineTo(hx+8, hy+18);
-    ctx.bezierCurveTo(hx+17, hy+14, hx+17, hy+2, hx+13, hy-6);
-    ctx.bezierCurveTo(hx+12, hy-14, hx-10, hy-16, hx-10, hy-8);
-    ctx.closePath(); ctx.fill();
-    // Left side curl — stays to the left of face
-    ctx.fillStyle='#b06828';
-    ctx.beginPath();
-    ctx.moveTo(hx-11, hy+4);
-    ctx.bezierCurveTo(hx-20, hy+8, hx-18, hy+20, hx-10, hy+22);
-    ctx.bezierCurveTo(hx-6,  hy+14, hx-10, hy+6,  hx-11, hy+4);
-    ctx.fill();
-
-    // ── HEAD — drawn on top of back hair ──
-    ctx.fillStyle='#f7d8be'; ctx.beginPath(); ctx.arc(hx,hy,11,0,TAU); ctx.fill();
-
-    // ── FACE FEATURES (always on top of head) ──
-    // Blush
-    ctx.fillStyle='rgba(220,100,120,0.4)';
-    ctx.beginPath(); ctx.arc(hx-6,hy+3,2.5,0,TAU); ctx.fill();
-    ctx.beginPath(); ctx.arc(hx+6,hy+3,2.5,0,TAU); ctx.fill();
-
-    // Eyes
-    ctx.fillStyle='#1a1320';
-    if (isStage) {
-      ctx.strokeStyle='#1a1320'; ctx.lineWidth=1.5;
-      ctx.beginPath(); ctx.moveTo(hx-5,hy); ctx.lineTo(hx-2,hy+1); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(hx+2,hy); ctx.lineTo(hx+5,hy+1); ctx.stroke();
-    } else {
-      ctx.fillRect(hx-5,hy-2,3,2.5); ctx.fillRect(hx+2,hy-2,3,2.5);
-      ctx.strokeStyle='#1a1320'; ctx.lineWidth=1;
-      ctx.beginPath(); ctx.moveTo(hx+5,hy-2); ctx.lineTo(hx+7.5,hy-4); ctx.stroke();
-      ctx.fillStyle='rgba(255,255,255,0.85)';
-      ctx.beginPath(); ctx.arc(hx-4,hy-1,0.9,0,TAU); ctx.fill();
-      ctx.beginPath(); ctx.arc(hx+3,hy-1,0.9,0,TAU); ctx.fill();
-    }
-    // Red lips
-    ctx.fillStyle='#c0394a';
-    ctx.beginPath(); ctx.moveTo(hx-3,hy+4);
-    ctx.quadraticCurveTo(hx,hy+7,hx+3,hy+4);
-    ctx.quadraticCurveTo(hx,hy+5,hx-3,hy+4); ctx.closePath(); ctx.fill();
-
-    // ── HAIR LAYER 2: front bangs — only covers FOREHEAD (above eyes at hy-2) ──
-    ctx.fillStyle='#c87840';
-    ctx.beginPath();
-    ctx.moveTo(hx-10, hy-5);                                    // left temple
-    ctx.bezierCurveTo(hx-8, hy-14, hx+8, hy-14, hx+11, hy-5); // crown arc
-    ctx.lineTo(hx+7,  hy-5);
-    ctx.bezierCurveTo(hx+4,  hy-5, hx+0, hy-5, hx-6, hy-5);   // bottom of bangs — stays above hy-5, well above eyes
-    ctx.closePath(); ctx.fill();
-    // Hair highlight on crown
-    ctx.fillStyle='#e0a868';
-    ctx.beginPath(); ctx.ellipse(hx+1,hy-9,4.5,2.5,-0.3,0,TAU); ctx.fill();
-
-    // Earring
-    ctx.fillStyle='#f0d060';
-    ctx.beginPath(); ctx.arc(hx+10,hy+2,2,0,TAU); ctx.fill();
+    renderMissLi(ctx, cx, cy, legSwing, armSwing, inAir, gstate==='stage'||gstate==='win', custom);
   }
 
   function drawParticles() {
@@ -971,26 +1011,58 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   }
 
   function drawCloudShape(sx: number, sy: number, w: number) {
-    ctx.save();
-    // Shadow under cloud
-    ctx.fillStyle = 'rgba(80,130,200,0.14)';
-    ctx.beginPath(); ctx.ellipse(sx + w/2, sy + 11, w/2 * 0.85, 10, 0, 0, TAU); ctx.fill();
-    // Main cloud body
-    ctx.fillStyle = CLOUD_PAL.platformMid;
-    ctx.beginPath(); ctx.roundRect(sx + 3, sy - 10, w - 6, 16, 8); ctx.fill();
-    ctx.fillStyle = CLOUD_PAL.platformSurf;
-    ctx.beginPath(); ctx.roundRect(sx, sy - 16, w, 18, [20, 20, 8, 8]); ctx.fill();
-    // Puff bumps
-    const nBumps = Math.max(2, Math.ceil(w / 52));
-    ctx.fillStyle = '#f6faff';
-    for (let i = 0; i < nBumps; i++) {
-      const bx = sx + 16 + (w - 32) * i / Math.max(1, nBumps - 1);
-      const hr = 13 + (i % 3) * 5;
-      ctx.beginPath(); ctx.ellipse(bx, sy - 14, hr, hr * 0.68, 0, 0, TAU); ctx.fill();
+    // Deterministic seed from platform x/w for consistent appearance
+    let s = ((sx * 73856093) ^ (w * 19349663)) >>> 0;
+    const rng = () => { s = (s * 1664525 + 1013904223) >>> 0; return (s >>> 0) / 4294967296; };
+
+    // Two rows of overlapping circles: base row + fluffy top row
+    const puffs: { x: number; r: number; up: number }[] = [];
+    // Base row — dense, smaller circles giving the flat-ish bottom
+    for (let x = sx + 8; x < sx + w - 4;) {
+      const r = 13 + rng() * 8;
+      puffs.push({ x, r, up: 0 });
+      x += r * 1.2 + rng() * 5;
     }
-    // Top highlight
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.fillRect(sx + 8, sy - 18, w - 16, 3);
+    // Fluffy top row — bigger circles raised above the base
+    for (let x = sx + 18; x < sx + w - 12;) {
+      const r = 18 + rng() * 16;
+      puffs.push({ x, r, up: r * 0.65 });
+      x += r * 1.12 + rng() * 10;
+    }
+
+    ctx.save();
+    // Drop shadow
+    ctx.fillStyle = 'rgba(50,90,190,0.15)';
+    for (const p of puffs.filter(p => p.up === 0)) {
+      ctx.beginPath();
+      ctx.ellipse(p.x + 4, sy + 11, p.r * 0.82, p.r * 0.3, 0, 0, TAU);
+      ctx.fill();
+    }
+    // Layer 1 — deepest blue-grey (gives cloud depth)
+    ctx.fillStyle = '#b4cadf';
+    for (const p of puffs) {
+      ctx.beginPath(); ctx.arc(p.x, sy - p.up, p.r, 0, TAU); ctx.fill();
+    }
+    // Layer 2 — mid blue-white
+    ctx.fillStyle = '#d4e8f6';
+    for (const p of puffs) {
+      ctx.beginPath(); ctx.arc(p.x, sy - p.up - 2, p.r * 0.88, 0, TAU); ctx.fill();
+    }
+    // Layer 3 — light
+    ctx.fillStyle = '#eaf4ff';
+    for (const p of puffs) {
+      ctx.beginPath(); ctx.arc(p.x - 1, sy - p.up - 4, p.r * 0.74, 0, TAU); ctx.fill();
+    }
+    // Layer 4 — near white
+    ctx.fillStyle = '#f4f9ff';
+    for (const p of puffs) {
+      ctx.beginPath(); ctx.arc(p.x - 1, sy - p.up - 6, p.r * 0.60, 0, TAU); ctx.fill();
+    }
+    // Layer 5 — pure white highlights at tops
+    ctx.fillStyle = 'rgba(255,255,255,0.96)';
+    for (const p of puffs) {
+      ctx.beginPath(); ctx.arc(p.x - 3, sy - p.up - p.r * 0.55, p.r * 0.36, 0, TAU); ctx.fill();
+    }
     ctx.restore();
   }
 

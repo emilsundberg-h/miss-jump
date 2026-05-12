@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { createGame, GameStateKind } from "@/lib/game";
+import {
+  createGame, GameStateKind,
+  CharCustom, DEFAULT_CUSTOM,
+  HAIR_PRESETS, DRESS_PRESETS,
+  drawPreviewChar,
+} from "@/lib/game";
 
 type LevelId = 1 | 2;
 
@@ -9,50 +14,44 @@ export default function Game() {
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const controlRef = useRef<ReturnType<typeof createGame> | null>(null);
 
-  const [levelId,  setLevelId]  = useState<LevelId | null>(null); // null = selection screen
+  const [levelId,  setLevelId]  = useState<LevelId | null>(null);
+  const [custom,   setCustom]   = useState<CharCustom>(DEFAULT_CUSTOM);
   const [state,    setState]    = useState<GameStateKind>("start");
   const [score,    setScore]    = useState(0);
   const [progress, setProgress] = useState(0);
   const [winData,  setWinData]  = useState<{ score: number; tries: number } | null>(null);
   const [tapHint,  setTapHint]  = useState(false);
 
-  // Create (or recreate) game whenever a level is chosen
   useEffect(() => {
     if (!levelId) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
-    setState("start");
-    setScore(0); setProgress(0); setWinData(null);
+    setState("start"); setScore(0); setProgress(0); setWinData(null);
     const ctrl = createGame(canvas, {
       onStateChange: (s, data) => {
         setState(s);
-        if (s === "play") {
-          setTapHint(true);
-          setTimeout(() => setTapHint(false), 3000);
-        }
-        if (s === "win" && data) {
-          setWinData({ score: data.score ?? 0, tries: data.tries ?? 1 });
-        }
+        if (s === "play") { setTapHint(true); setTimeout(() => setTapHint(false), 3000); }
+        if (s === "win" && data) setWinData({ score: data.score ?? 0, tries: data.tries ?? 1 });
       },
       onProgress: pct => setProgress(pct),
       onScore:    n   => setScore(n),
-    }, levelId);
+    }, levelId, custom);
     controlRef.current = ctrl;
     return () => ctrl.destroy();
-  }, [levelId]);
+  }, [levelId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Note: custom intentionally excluded — we only apply it when starting a new game
 
   const pressJump   = useCallback(() => controlRef.current?.pressJump(),   []);
   const releaseJump = useCallback(() => controlRef.current?.releaseJump(), []);
 
-  // Pointer events on canvas
   useEffect(() => {
     const el = canvasRef.current;
     if (!el) return;
     const down = (e: PointerEvent) => { e.preventDefault(); pressJump(); };
     const up   = (e: PointerEvent) => { e.preventDefault(); releaseJump(); };
-    el.addEventListener("pointerdown",   down,   { passive: false });
-    el.addEventListener("pointerup",     up,     { passive: false });
-    el.addEventListener("pointercancel", up,     { passive: false });
+    el.addEventListener("pointerdown",   down, { passive: false });
+    el.addEventListener("pointerup",     up,   { passive: false });
+    el.addEventListener("pointercancel", up,   { passive: false });
     return () => {
       el.removeEventListener("pointerdown",   down);
       el.removeEventListener("pointerup",     up);
@@ -60,37 +59,29 @@ export default function Game() {
     };
   }, [pressJump, releaseJump]);
 
-  // Keyboard
   useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") {
-        e.preventDefault(); pressJump();
-      }
+    const kd = (e: KeyboardEvent) => {
+      if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") { e.preventDefault(); pressJump(); }
     };
-    const up = (e: KeyboardEvent) => {
+    const ku = (e: KeyboardEvent) => {
       if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") releaseJump();
     };
-    window.addEventListener("keydown", down);
-    window.addEventListener("keyup",   up);
-    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
+    window.addEventListener("keydown", kd);
+    window.addEventListener("keyup",   ku);
+    return () => { window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); };
   }, [pressJump, releaseJump]);
 
   const isPlaying = state === "play" || state === "stage";
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "#0b0d12", overflow: "hidden" }}>
-      {/* Canvas fills viewport — always mounted so it's ready */}
       <canvas
         ref={canvasRef}
-        style={{
-          display: "block", width: "100vw", height: "100vh",
-          cursor: "pointer", touchAction: "none",
-          userSelect: "none", WebkitUserSelect: "none",
-          visibility: levelId ? "visible" : "hidden",
-        }}
+        style={{ display: "block", width: "100vw", height: "100vh", cursor: "pointer",
+          touchAction: "none", userSelect: "none", WebkitUserSelect: "none",
+          visibility: levelId ? "visible" : "hidden" }}
       />
 
-      {/* HUD */}
       {isPlaying && levelId && (
         <div style={{ position: "fixed", top: 18, left: 18, right: 18, display: "flex", justifyContent: "space-between", alignItems: "flex-start", pointerEvents: "none", zIndex: 5 }}>
           <HudCard label="Strålkastare" value={String(score)} />
@@ -98,42 +89,57 @@ export default function Game() {
         </div>
       )}
 
-      {/* Tap hint */}
       {tapHint && (
-        <div style={{
-          position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
-          color: "rgba(255,255,255,0.7)", fontSize: 12, letterSpacing: "0.2em", textTransform: "uppercase",
-          background: "rgba(20,14,26,0.4)", padding: "8px 16px", borderRadius: 99,
-          backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", pointerEvents: "none", zIndex: 3,
-        }}>
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", color: "rgba(255,255,255,0.7)", fontSize: 12, letterSpacing: "0.2em", textTransform: "uppercase", background: "rgba(20,14,26,0.4)", padding: "8px 16px", borderRadius: 99, backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", pointerEvents: "none", zIndex: 3 }}>
           Tryck eller mellanslag för att hoppa · håll för högre hopp
         </div>
       )}
 
       {/* ── Level selection ── */}
       <Overlay show={levelId === null}>
-        <div style={{ maxWidth: 600, width: "100%" }}>
-          <div style={{ textAlign: "center", marginBottom: 28 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.28em", textTransform: "uppercase", color: "#b14a78", marginBottom: 10 }}>Välj bana</div>
-            <h1 style={{ fontFamily: '"Playfair Display", serif', fontWeight: 900, fontStyle: "italic", fontSize: "clamp(38px, 6vw, 68px)", lineHeight: 0.92, margin: "0 0 6px", color: "#f7efe2" }}>Miss Jump</h1>
+        <div style={{ maxWidth: 680, width: "100%", padding: "0 12px" }}>
+          <div style={{ textAlign: "center", marginBottom: 24 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.28em", textTransform: "uppercase", color: "#b14a78", marginBottom: 8 }}>Välj bana</div>
+            <h1 style={{ fontFamily: '"Playfair Display", serif', fontWeight: 900, fontStyle: "italic", fontSize: "clamp(36px,6vw,64px)", lineHeight: 0.92, margin: "0 0 0", color: "#f7efe2" }}>Miss Jump</h1>
           </div>
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", justifyContent: "center" }}>
-            <LevelCard
-              num={1}
-              title="Skogsturné"
-              description="Mossiga stensplattor, vattenfall, taggar av ben. Nå scenen djupt inne i skogen."
-              difficulty={2}
-              palette={{ bg: "linear-gradient(160deg,#2a3820,#1a2818)", accent: "#85b84a", dot: "#a0c862", badge: "#4f7e2e" }}
-              onClick={() => setLevelId(1)}
-            />
-            <LevelCard
-              num={2}
-              title="Molnturné"
-              description="Fluffiga moln på himlen, blixtar som hinder. Klättra upp mot konsertscenen bland stjärnorna."
-              difficulty={3}
-              palette={{ bg: "linear-gradient(160deg,#1a3060,#0e1c40)", accent: "#72b8e8", dot: "#f4d820", badge: "#2c6ba8" }}
-              onClick={() => setLevelId(2)}
-            />
+
+          {/* Character customiser */}
+          <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 18, padding: "16px 20px", marginBottom: 18, display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
+            <CharacterPreview custom={custom} />
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <PickerRow label="Hår">
+                {HAIR_PRESETS.map(p => (
+                  <Swatch
+                    key={p.key}
+                    color={p.swatch}
+                    label={p.label}
+                    active={custom.hair === p.hair}
+                    onClick={() => setCustom(c => ({ ...c, hair: p.hair, hairMid: p.hairMid, hairHi: p.hairHi }))}
+                  />
+                ))}
+              </PickerRow>
+              <PickerRow label="Klänning">
+                {DRESS_PRESETS.map(p => (
+                  <Swatch
+                    key={p.key}
+                    color={p.swatch}
+                    label={p.label}
+                    active={custom.dress === p.dress}
+                    onClick={() => setCustom(c => ({ ...c, dress: p.dress, dressTrim: p.dressTrim, dressAccent: p.dressAccent }))}
+                  />
+                ))}
+              </PickerRow>
+            </div>
+          </div>
+
+          {/* Level cards */}
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "center" }}>
+            <LevelCard num={1} title="Skogsturné" description="Mossiga stenar, vattenfall och bentaggar. Spring mot scenen i skogen." difficulty={2}
+              palette={{ bg: "linear-gradient(150deg,#1e2e14,#101e0e)", accent: "#85b84a", dot: "#a0c862", badge: "#3a6020" }}
+              onClick={() => setLevelId(1)} />
+            <LevelCard num={2} title="Molnturné" description="Fluffiga moln och blixtar högt uppe bland stjärnorna." difficulty={3}
+              palette={{ bg: "linear-gradient(150deg,#12224a,#0a1428)", accent: "#72b8e8", dot: "#f4d820", badge: "#1e508a" }}
+              onClick={() => setLevelId(2)} />
           </div>
         </div>
       </Overlay>
@@ -144,8 +150,8 @@ export default function Game() {
           <Eyebrow>{levelId === 1 ? "Skogsturné · Akt 1" : "Molnturné · Akt 2"}</Eyebrow>
           <BigTitle>Miss Jump</BigTitle>
           <Subtitle>{levelId === 1
-            ? "Hoppa över taggar och avgrunder genom den mossiga skogen. Nå scenen vid vattenfallet."
-            : "Hoppa mellan molnen i höjd med solen. Akta blixtarna. Nå scenen bland molnen."
+            ? "Hoppa över taggar och avgrunder. Nå scenen vid vattenfallet."
+            : "Hoppa mellan molnen. Akta blixtarna. Nå scenen bland stjärnorna."
           }</Subtitle>
           <Cta onClick={pressJump}>Starta showen <Key>SPACE</Key></Cta>
           <BackLink onClick={() => setLevelId(null)}>← Byt bana</BackLink>
@@ -173,18 +179,83 @@ export default function Game() {
           {winData && (
             <div style={{ display: "flex", gap: 28, justifyContent: "center", margin: "18px 0 4px" }}>
               <Stat label="Strålkastare" value={String(winData.score)} />
-              <Stat label="Försök"       value={String(winData.tries)} />
+              <Stat label="Försök" value={String(winData.tries)} />
             </div>
           )}
           <Cta onClick={pressJump} style={{ marginTop: 18 }}>Spela igen <Key>SPACE</Key></Cta>
-          <BackLink onClick={() => setLevelId(null)}>← Byt bana</BackLink>
+          <BackLink onClick={() => setLevelId(null)}>← Byt bana / Anpassa</BackLink>
         </TitleCard>
       </Overlay>
     </div>
   );
 }
 
-// ── Level selection card ────────────────────────────────────────────────────
+// ── Character preview canvas ─────────────────────────────────────────────────
+
+function CharacterPreview({ custom }: { custom: CharCustom }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const DPR = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2) : 1;
+  const W = 90, H = 130;
+
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    // Soft background
+    const bg = ctx.createRadialGradient(W/2, H*0.6, 5, W/2, H*0.6, W*0.7);
+    bg.addColorStop(0, "rgba(255,240,255,0.12)");
+    bg.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    // Tiny ground shadow
+    ctx.fillStyle = "rgba(80,40,80,0.18)";
+    ctx.beginPath(); ctx.ellipse(W/2, H - 8, 22, 6, 0, 0, Math.PI * 2); ctx.fill();
+    // Character
+    drawPreviewChar(ctx, W / 2, H - 8, custom);
+  }, [custom, DPR]);
+
+  return (
+    <canvas
+      ref={ref}
+      width={W * DPR}
+      height={H * DPR}
+      style={{ width: W, height: H, flexShrink: 0 }}
+    />
+  );
+}
+
+// ── Customisation UI pieces ──────────────────────────────────────────────────
+
+function PickerRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", marginBottom: 6 }}>{label}</div>
+      <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>{children}</div>
+    </div>
+  );
+}
+
+function Swatch({ color, label, active, onClick }: { color: string; label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      style={{
+        width: 28, height: 28, borderRadius: "50%",
+        background: color,
+        border: active ? "2.5px solid #fff" : "2px solid rgba(255,255,255,0.18)",
+        boxShadow: active ? `0 0 0 1.5px ${color}, 0 0 8px ${color}88` : "none",
+        cursor: "pointer", transition: "transform 0.12s, box-shadow 0.12s",
+        transform: active ? "scale(1.18)" : "scale(1)",
+        outline: "none",
+      }}
+    />
+  );
+}
+
+// ── Level card ───────────────────────────────────────────────────────────────
 
 function LevelCard({ num, title, description, difficulty, palette, onClick }: {
   num: number; title: string; description: string; difficulty: number;
@@ -193,44 +264,34 @@ function LevelCard({ num, title, description, difficulty, palette, onClick }: {
 }) {
   return (
     <button onClick={onClick} style={{
-      flex: "1 1 240px", maxWidth: 270,
+      flex: "1 1 220px", maxWidth: 260,
       background: palette.bg, border: `1.5px solid ${palette.accent}44`,
-      borderRadius: 20, padding: "28px 24px 24px", cursor: "pointer",
-      textAlign: "left", color: "#f5efe6", transition: "transform 0.15s, box-shadow 0.15s",
-      boxShadow: "0 12px 40px rgba(0,0,0,0.4)",
-    }}
-      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(-4px)"; (e.currentTarget as HTMLElement).style.boxShadow = "0 20px 50px rgba(0,0,0,0.5)"; }}
-      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = ""; (e.currentTarget as HTMLElement).style.boxShadow = "0 12px 40px rgba(0,0,0,0.4)"; }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-        <span style={{ background: palette.badge, color: "#fff", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", padding: "3px 10px", borderRadius: 99 }}>
-          Bana {num}
-        </span>
-        <span style={{ fontSize: 13, letterSpacing: 2 }}>
-          {Array.from({ length: 3 }, (_, i) => (
-            <span key={i} style={{ color: i < difficulty ? palette.dot : "rgba(255,255,255,0.2)" }}>★</span>
-          ))}
+      borderRadius: 18, padding: "22px 20px 20px", cursor: "pointer",
+      textAlign: "left", color: "#f5efe6",
+      boxShadow: "0 10px 36px rgba(0,0,0,0.4)", outline: "none",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+        <span style={{ background: palette.badge, color: "#fff", fontSize: 10, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", padding: "3px 9px", borderRadius: 99 }}>Bana {num}</span>
+        <span style={{ fontSize: 12, letterSpacing: 2 }}>
+          {[0,1,2].map(i => <span key={i} style={{ color: i < difficulty ? palette.dot : "rgba(255,255,255,0.2)" }}>★</span>)}
         </span>
       </div>
-      <div style={{ fontFamily: '"Playfair Display", serif', fontWeight: 700, fontStyle: "italic", fontSize: 26, lineHeight: 1.1, marginBottom: 10, color: "#fff" }}>{title}</div>
-      <div style={{ fontSize: 13, lineHeight: 1.6, color: "rgba(245,239,230,0.72)" }}>{description}</div>
-      <div style={{ marginTop: 20, display: "inline-flex", alignItems: "center", gap: 6, color: palette.accent, fontSize: 13, fontWeight: 600 }}>
-        Starta <span style={{ fontSize: 16 }}>→</span>
-      </div>
+      <div style={{ fontFamily: '"Playfair Display", serif', fontWeight: 700, fontStyle: "italic", fontSize: 22, lineHeight: 1.1, marginBottom: 8, color: "#fff" }}>{title}</div>
+      <div style={{ fontSize: 12, lineHeight: 1.6, color: "rgba(245,239,230,0.68)" }}>{description}</div>
+      <div style={{ marginTop: 16, color: palette.accent, fontSize: 12, fontWeight: 600 }}>Starta →</div>
     </button>
   );
 }
 
-// ── Shared overlay components ───────────────────────────────────────────────
+// ── Shared overlays ──────────────────────────────────────────────────────────
 
 function Overlay({ show, children }: { show: boolean; children: React.ReactNode }) {
   return (
     <div style={{
-      position: "fixed", inset: 0, display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "center",
+      position: "fixed", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
       background: "radial-gradient(ellipse at center, rgba(20,14,26,0.55) 0%, rgba(8,6,12,0.78) 100%)",
       backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)",
-      zIndex: 10, textAlign: "center", padding: 20,
+      zIndex: 10, textAlign: "center", padding: 16,
       opacity: show ? 1 : 0, pointerEvents: show ? "auto" : "none",
       transition: "opacity 0.35s ease",
     }}>
@@ -241,37 +302,27 @@ function Overlay({ show, children }: { show: boolean; children: React.ReactNode 
 
 function TitleCard({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{
-      maxWidth: 540, padding: "36px 40px 32px",
-      background: "linear-gradient(180deg, rgba(255,240,222,0.96), rgba(255,224,218,0.92))",
-      borderRadius: 26, border: "1px solid rgba(255,255,255,0.6)",
-      boxShadow: "0 30px 80px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.8)",
-      color: "#2a1a30",
-    }}>
+    <div style={{ maxWidth: 520, padding: "32px 36px 28px", background: "linear-gradient(180deg,rgba(255,240,222,0.96),rgba(255,224,218,0.92))", borderRadius: 24, border: "1px solid rgba(255,255,255,0.6)", boxShadow: "0 28px 70px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.8)", color: "#2a1a30" }}>
       {children}
     </div>
   );
 }
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
-  return <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.28em", textTransform: "uppercase", color: "#b14a78", marginBottom: 10 }}>{children}</div>;
+  return <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.28em", textTransform: "uppercase", color: "#b14a78", marginBottom: 8 }}>{children}</div>;
 }
 
 function BigTitle({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return (
-    <h1 style={{ fontFamily: '"Playfair Display", "Times New Roman", serif', fontWeight: 900, fontStyle: "italic", fontSize: "clamp(48px, 7vw, 84px)", lineHeight: 0.92, margin: "0 0 8px", letterSpacing: "-0.02em", color: "#1f0e26", ...style }}>
-      {children}
-    </h1>
-  );
+  return <h1 style={{ fontFamily: '"Playfair Display","Times New Roman",serif', fontWeight: 900, fontStyle: "italic", fontSize: "clamp(46px,7vw,80px)", lineHeight: 0.92, margin: "0 0 8px", letterSpacing: "-0.02em", color: "#1f0e26", ...style }}>{children}</h1>;
 }
 
 function Subtitle({ children }: { children: React.ReactNode }) {
-  return <p style={{ fontSize: 16, lineHeight: 1.5, color: "#4a2c4a", opacity: 0.85, margin: "0 auto 22px", maxWidth: 380 }}>{children}</p>;
+  return <p style={{ fontSize: 15, lineHeight: 1.5, color: "#4a2c4a", opacity: 0.85, margin: "0 auto 20px", maxWidth: 360 }}>{children}</p>;
 }
 
 function Cta({ children, onClick, style }: { children: React.ReactNode; onClick: () => void; style?: React.CSSProperties }) {
   return (
-    <button onClick={onClick} style={{ display: "inline-flex", alignItems: "center", gap: 10, background: "#1f0e26", color: "#fff5e8", padding: "14px 26px", borderRadius: 99, fontWeight: 700, fontSize: 15, letterSpacing: "0.04em", border: "none", cursor: "pointer", boxShadow: "0 10px 24px rgba(31,14,38,0.4)", ...style }}>
+    <button onClick={onClick} style={{ display: "inline-flex", alignItems: "center", gap: 10, background: "#1f0e26", color: "#fff5e8", padding: "13px 24px", borderRadius: 99, fontWeight: 700, fontSize: 14, letterSpacing: "0.04em", border: "none", cursor: "pointer", boxShadow: "0 10px 24px rgba(31,14,38,0.4)", ...style }}>
       {children}
     </button>
   );
@@ -279,39 +330,33 @@ function Cta({ children, onClick, style }: { children: React.ReactNode; onClick:
 
 function BackLink({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
   return (
-    <div style={{ marginTop: 14 }}>
-      <button onClick={onClick} style={{ background: "none", border: "none", color: "#9060c0", fontSize: 13, cursor: "pointer", opacity: 0.8, letterSpacing: "0.04em" }}>
-        {children}
-      </button>
+    <div style={{ marginTop: 12 }}>
+      <button onClick={onClick} style={{ background: "none", border: "none", color: "#9060c0", fontSize: 12, cursor: "pointer", opacity: 0.8, letterSpacing: "0.04em" }}>{children}</button>
     </div>
   );
 }
 
 function Key({ children }: { children: React.ReactNode }) {
-  return <span style={{ background: "rgba(255,255,255,0.18)", padding: "3px 9px", borderRadius: 6, fontSize: 12, fontFamily: "ui-monospace, monospace", border: "1px solid rgba(255,255,255,0.2)" }}>{children}</span>;
-}
-
-function Hint({ children }: { children: React.ReactNode }) {
-  return <div style={{ marginTop: 16, fontSize: 12, color: "#6b4a6b", opacity: 0.7, letterSpacing: "0.08em", textTransform: "uppercase" }}>{children}</div>;
+  return <span style={{ background: "rgba(255,255,255,0.18)", padding: "3px 9px", borderRadius: 6, fontSize: 12, fontFamily: "ui-monospace,monospace", border: "1px solid rgba(255,255,255,0.2)" }}>{children}</span>;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ textAlign: "center" }}>
       <div style={{ fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", opacity: 0.6, marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 28, fontWeight: 800, fontVariantNumeric: "tabular-nums", color: "#1f0e26" }}>{value}</div>
+      <div style={{ fontSize: 26, fontWeight: 800, fontVariantNumeric: "tabular-nums", color: "#1f0e26" }}>{value}</div>
     </div>
   );
 }
 
 function HudCard({ label, value, progress }: { label: string; value?: string; progress?: number }) {
   return (
-    <div style={{ background: "rgba(20,14,26,0.55)", backdropFilter: "blur(12px) saturate(1.2)", WebkitBackdropFilter: "blur(12px) saturate(1.2)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, padding: "10px 16px", color: "#f7efe2", boxShadow: "0 8px 24px rgba(0,0,0,0.25)", textAlign: progress !== undefined ? "right" : "left" }}>
+    <div style={{ background: "rgba(20,14,26,0.55)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, padding: "10px 16px", color: "#f7efe2", boxShadow: "0 8px 24px rgba(0,0,0,0.25)", textAlign: progress !== undefined ? "right" : "left" }}>
       <div style={{ fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", opacity: 0.6, marginBottom: 2, fontWeight: 600 }}>{label}</div>
       {value !== undefined && <div style={{ fontSize: 22, fontWeight: 700, fontVariantNumeric: "tabular-nums", letterSpacing: "0.02em" }}>{value}</div>}
       {progress !== undefined && (
-        <div style={{ width: 220, height: 6, background: "rgba(255,255,255,0.15)", borderRadius: 99, overflow: "hidden", marginTop: 8 }}>
-          <div style={{ height: "100%", width: `${(progress * 100).toFixed(1)}%`, background: "linear-gradient(90deg, #ffb86b 0%, #ff6f9c 50%, #c46cff 100%)", borderRadius: 99, transition: "width 0.12s linear" }} />
+        <div style={{ width: 200, height: 6, background: "rgba(255,255,255,0.15)", borderRadius: 99, overflow: "hidden", marginTop: 8 }}>
+          <div style={{ height: "100%", width: `${(progress*100).toFixed(1)}%`, background: "linear-gradient(90deg,#ffb86b 0%,#ff6f9c 50%,#c46cff 100%)", borderRadius: 99, transition: "width 0.12s linear" }} />
         </div>
       )}
     </div>
