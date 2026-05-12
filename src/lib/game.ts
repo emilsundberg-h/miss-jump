@@ -244,11 +244,13 @@ export interface CharCustom {
   hair: string; hairMid: string; hairHi: string;
   dress: string; dressTrim: string; dressAccent: string;
   shoe: string;
+  hairLength: 'short' | 'long';
 }
 export const DEFAULT_CUSTOM: CharCustom = {
   hair: '#c87840', hairMid: '#b06828', hairHi: '#e0a868',
   dress: '#1a1320', dressTrim: '#f7d8e0', dressAccent: '#c0394a',
   shoe: '#1a1018',
+  hairLength: 'short',
 };
 export const HAIR_PRESETS: { key: string; label: string; swatch: string; hair: string; hairMid: string; hairHi: string }[] = [
   { key:'auburn',  label:'Auburn',  swatch:'#c87840', hair:'#c87840', hairMid:'#b06828', hairHi:'#e0a868' },
@@ -282,6 +284,34 @@ function renderMissLi(
   c: CharCustom,
 ): void {
   const hx = cx, hy = cy - 70;
+
+  // ── Long hair — drawn FIRST so it sits behind legs, dress, and arms ──
+  if (c.hairLength === 'long') {
+    // Main flowing mass (left/back side of body)
+    ctx.fillStyle = c.hair;
+    ctx.beginPath();
+    ctx.moveTo(hx-6,  hy-10);
+    ctx.bezierCurveTo(hx-22, hy-4,  hx-26, cy-52, hx-20, cy-24);
+    ctx.bezierCurveTo(hx-14, cy-14, hx-6,  cy-20, hx-4,  cy-28);
+    ctx.bezierCurveTo(hx-10, cy-42, hx-14, hy+6,  hx-8,  hy+2);
+    ctx.closePath(); ctx.fill();
+    // Inner shadow stripe for wave depth
+    ctx.fillStyle = c.hairMid;
+    ctx.beginPath();
+    ctx.moveTo(hx-10, hy-8);
+    ctx.bezierCurveTo(hx-18, hy-2,  hx-20, cy-50, hx-16, cy-28);
+    ctx.bezierCurveTo(hx-12, cy-20, hx-8,  cy-22, hx-8,  cy-32);
+    ctx.bezierCurveTo(hx-12, cy-44, hx-16, hy+4,  hx-12, hy-1);
+    ctx.closePath(); ctx.fill();
+    // Right side flow (visible over right shoulder)
+    ctx.fillStyle = c.hair;
+    ctx.beginPath();
+    ctx.moveTo(hx+8,  hy-8);
+    ctx.bezierCurveTo(hx+18, hy-2,  hx+18, cy-54, hx+14, cy-32);
+    ctx.bezierCurveTo(hx+10, cy-20, hx+6,  cy-24, hx+6,  cy-34);
+    ctx.bezierCurveTo(hx+10, cy-48, hx+14, hy+4,  hx+10, hy-2);
+    ctx.closePath(); ctx.fill();
+  }
 
   // Back leg
   ctx.save(); ctx.translate(cx-6, cy-22); ctx.rotate(-legSwing*0.6);

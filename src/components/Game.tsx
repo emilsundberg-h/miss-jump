@@ -118,6 +118,16 @@ export default function Game() {
                   />
                 ))}
               </PickerRow>
+              <PickerRow label="Längd">
+                <LengthToggle
+                  active={custom.hairLength === 'short'}
+                  onClick={() => setCustom(c => ({ ...c, hairLength: 'short' }))}
+                >Kort</LengthToggle>
+                <LengthToggle
+                  active={custom.hairLength === 'long'}
+                  onClick={() => setCustom(c => ({ ...c, hairLength: 'long' }))}
+                >Långt</LengthToggle>
+              </PickerRow>
               <PickerRow label="Klänning">
                 {DRESS_PRESETS.map(p => (
                   <Swatch
@@ -234,6 +244,25 @@ function PickerRow({ label, children }: { label: string; children: React.ReactNo
       <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", marginBottom: 6 }}>{label}</div>
       <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>{children}</div>
     </div>
+  );
+}
+
+function LengthToggle({ children, active, onClick }: { children: React.ReactNode; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: "4px 14px", borderRadius: 99, fontSize: 12, fontWeight: 600,
+        border: active ? "2px solid #fff" : "2px solid rgba(255,255,255,0.22)",
+        background: active ? "rgba(255,255,255,0.18)" : "transparent",
+        color: active ? "#fff" : "rgba(255,255,255,0.55)",
+        cursor: "pointer", letterSpacing: "0.04em",
+        transition: "all 0.12s",
+        outline: "none",
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
