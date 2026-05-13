@@ -44,7 +44,24 @@ function useMusic() {
     setVol(VOL.menu);
   }, [setVol]);
 
-  useEffect(() => () => { cancelAnimationFrame(raf.current); audio.current?.pause(); }, []);
+  useEffect(() => {
+    // Pause when tab/app goes to background, resume when it comes back
+    const onVisibility = () => {
+      const a = audio.current;
+      if (!a) return;
+      if (document.hidden) {
+        a.pause();
+      } else {
+        a.play().catch(() => {});
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      cancelAnimationFrame(raf.current);
+      audio.current?.pause();
+    };
+  }, []);
   return { start, setVol };
 }
 
