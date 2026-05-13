@@ -169,37 +169,52 @@ const CLOUD_PAL = {
 };
 
 const CLOUD_PLATFORMS: PlatformDef[] = [
-  { x: 0,    w: 700,  y: 0 },
-  { x: 880,  w: 160,  y: 60 },
-  { x: 1120, w: 130,  y: 160 },
-  { x: 1360, w: 150,  y: 60 },
-  { x: 1600, w: 180,  y: 170, spikes: [{ ox: 50, n: 2 }] },
-  { x: 1900, w: 120,  y: 80 },
-  { x: 2120, w: 140,  y: 190 },
-  { x: 2380, w: 110,  y: 90 },
-  { x: 2580, w: 160,  y: 200 },
-  { x: 2860, w: 260,  y: 90,  spikes: [{ ox: 60, n: 2 }, { ox: 160, n: 2 }] },
-  { x: 3230, w: 130,  y: 180 },
-  { x: 3460, w: 100,  y: 270 },
-  { x: 3650, w: 140,  y: 170 },
-  { x: 3890, w: 110,  y: 70 },
-  { x: 4100, w: 120,  y: 170 },
-  { x: 4310, w: 100,  y: 260 },
-  { x: 4500, w: 140,  y: 160 },
-  { x: 4750, w: 200,  y: 70,  spikes: [{ ox: 60, n: 2 }] },
-  { x: 5060, w: 120,  y: 180 },
-  { x: 5280, w: 100,  y: 270 },
-  { x: 5480, w: 130,  y: 160 },
-  { x: 5710, w: 140,  y: 60 },
-  { x: 5960, w: 200,  y: 40 },
-  { x: 6270, w: 160,  y: 130 },
-  { x: 6540, w: 120,  y: 60 },
-  { x: 6760, w: 300,  y: 0 },
-  { x: 7200, w: 1400, y: 0, isStage: true },
+  // ── Uppvärmning ──
+  { x: 0,     w: 620,  y: 0 },
+  { x: 810,   w: 150,  y: 70 },
+  { x: 1060,  w: 130,  y: 180 },
+  { x: 1300,  w: 140,  y: 70 },
+  { x: 1570,  w: 160,  y: 180, spikes: [{ ox: 55, n: 2 }] },
+  { x: 1870,  w: 100,  y: 80 },
+  // ── Klättring ──
+  { x: 2110,  w: 120,  y: 200 },
+  { x: 2370,  w: 90,   y: 300 },
+  { x: 2600,  w: 120,  y: 170 },
+  { x: 2880,  w: 100,  y: 60 },
+  { x: 3120,  w: 260,  y: 0,   spikes: [{ ox: 70, n: 2 }, { ox: 165, n: 2 }] },
+  { x: 3550,  w: 90,   y: 150 },
+  { x: 3800,  w: 80,   y: 270 },
+  { x: 4020,  w: 110,  y: 150 },
+  // ── Svårt avsnitt 1 ──
+  { x: 4310,  w: 90,   y: 260 },
+  { x: 4570,  w: 90,   y: 150 },
+  { x: 4860,  w: 80,   y: 50 },
+  { x: 5110,  w: 210,  y: 160, spikes: [{ ox: 50, n: 2 }, { ox: 140, n: 2 }] },
+  { x: 5510,  w: 80,   y: 80 },
+  { x: 5760,  w: 80,   y: 210 },
+  { x: 6010,  w: 90,   y: 310 },
+  { x: 6280,  w: 80,   y: 190 },
+  // ── Fartsträcka ──
+  { x: 6570,  w: 80,   y: 80 },
+  { x: 6840,  w: 260,  y: 0,   spikes: [{ ox: 60, n: 2 }, { ox: 150, n: 3 }] },
+  { x: 7310,  w: 80,   y: 160 },
+  { x: 7580,  w: 80,   y: 270 },
+  { x: 7870,  w: 80,   y: 150 },
+  { x: 8150,  w: 80,   y: 60 },
+  { x: 8430,  w: 80,   y: 180 },
+  { x: 8720,  w: 90,   y: 290 },
+  // ── Slutattack ──
+  { x: 9030,  w: 80,   y: 170 },
+  { x: 9310,  w: 120,  y: 60 },
+  { x: 9600,  w: 90,   y: 190 },
+  { x: 9900,  w: 80,   y: 280 },
+  { x: 10210, w: 110,  y: 150 },
+  { x: 10530, w: 260,  y: 0 },
+  { x: 11000, w: 1400, y: 0,   isStage: true },
 ];
-const CLOUD_STAGE_START = 7200;
-const CLOUD_FINISH_X    = 7600;
-const CLOUD_LEVEL_END   = 8600;
+const CLOUD_STAGE_START = 11000;
+const CLOUD_FINISH_X    = 11400;
+const CLOUD_LEVEL_END   = 13000;
 
 const CLOUD_SPIKE_DEFS: SpikePos[] = [];
 for (const p of CLOUD_PLATFORMS) {
@@ -230,10 +245,10 @@ const CLOUD_COIN_DEFS: CoinDef[] = [];
 function buildCloudScenery(): Scenery {
   const r = seededRand(99);
   const mountains: MountainDef[] = [];
-  for (let i = 0; i < 22; i++)
-    mountains.push({ x: r() * CLOUD_LEVEL_END * 1.3, h: 50 + r() * 110, w: 180 + r() * 420 });
+  for (let i = 0; i < 34; i++)
+    mountains.push({ x: r() * CLOUD_LEVEL_END * 1.2, h: 50 + r() * 110, w: 180 + r() * 420 });
   const clouds: CloudDef[] = [];
-  for (let i = 0; i < 28; i++)
+  for (let i = 0; i < 42; i++)
     clouds.push({ x: r() * CLOUD_LEVEL_END, y: 20 + r() * 220, w: 80 + r() * 230, o: 0.45 + r() * 0.55 });
   return { farTrees: [], midTrees: [], mountains, clouds, waterfalls: [], grass: [] };
 }
@@ -245,12 +260,16 @@ export interface CharCustom {
   dress: string; dressTrim: string; dressAccent: string;
   shoe: string;
   hairLength: 'short' | 'long';
+  outfit: 'dress' | 'top';
+  pantsColor: string;
 }
 export const DEFAULT_CUSTOM: CharCustom = {
   hair: '#c87840', hairMid: '#b06828', hairHi: '#e0a868',
   dress: '#1a1320', dressTrim: '#f7d8e0', dressAccent: '#c0394a',
   shoe: '#1a1018',
   hairLength: 'short',
+  outfit: 'dress',
+  pantsColor: '#161016',
 };
 export const HAIR_PRESETS: { key: string; label: string; swatch: string; hair: string; hairMid: string; hairHi: string }[] = [
   { key:'auburn',  label:'Auburn',  swatch:'#c87840', hair:'#c87840', hairMid:'#b06828', hairHi:'#e0a868' },
@@ -267,6 +286,15 @@ export const DRESS_PRESETS: { key: string; label: string; swatch: string; dress:
   { key:'teal',   label:'Turkos',    swatch:'#1a5050', dress:'#1a5050', dressTrim:'#a0e0d8', dressAccent:'#f0e880' },
   { key:'navy',   label:'Marinblå',  swatch:'#181870', dress:'#181870', dressTrim:'#a8c8f0', dressAccent:'#f0e8a0' },
   { key:'gold',   label:'Guld',      swatch:'#6a4010', dress:'#6a4010', dressTrim:'#f8d860', dressAccent:'#fff8d0' },
+];
+
+export const PANTS_PRESETS: { key: string; label: string; swatch: string; color: string }[] = [
+  { key:'black',  label:'Svart',    swatch:'#161016', color:'#161016' },
+  { key:'navy',   label:'Marinblå', swatch:'#101438', color:'#101438' },
+  { key:'grey',   label:'Grå',      swatch:'#484858', color:'#484858' },
+  { key:'beige',  label:'Beige',    swatch:'#c4a880', color:'#c4a880' },
+  { key:'green',  label:'Grön',     swatch:'#1a4020', color:'#1a4020' },
+  { key:'rust',   label:'Rostbrun', swatch:'#6a2810', color:'#6a2810' },
 ];
 
 /** Draw Miss Li on any canvas — used for in-game rendering and the preview. */
@@ -313,25 +341,58 @@ function renderMissLi(
     ctx.closePath(); ctx.fill();
   }
 
+  // Legs — pants-coloured when outfit='top', skin when dress
+  const legFill = c.outfit === 'top' ? c.pantsColor : '#f4d2b8';
   // Back leg
   ctx.save(); ctx.translate(cx-6, cy-22); ctx.rotate(-legSwing*0.6);
-  ctx.fillStyle='#f4d2b8'; ctx.fillRect(-4,0,8,22);
+  ctx.fillStyle=legFill; ctx.fillRect(-4,0,8,22);
   ctx.fillStyle=c.shoe; ctx.fillRect(-6,18,12,6); ctx.restore();
   // Front leg
   ctx.save(); ctx.translate(cx+4, cy-22); ctx.rotate(legSwing*0.6);
-  ctx.fillStyle='#f4d2b8'; ctx.fillRect(-4,0,8,22);
+  ctx.fillStyle=legFill; ctx.fillRect(-4,0,8,22);
   ctx.fillStyle=c.shoe; ctx.fillRect(-6,18,12,6); ctx.restore();
 
-  // Skirt
-  ctx.fillStyle=c.dress; ctx.beginPath();
-  ctx.moveTo(cx-12,cy-38); ctx.lineTo(cx+12,cy-38); ctx.lineTo(cx+17,cy-22); ctx.lineTo(cx-17,cy-22);
-  ctx.closePath(); ctx.fill();
-  ctx.fillStyle=c.dressTrim; ctx.fillRect(cx-17,cy-23,34,2);
-  // Torso
-  ctx.fillStyle=c.dress; ctx.beginPath();
-  ctx.moveTo(cx-11,cy-56); ctx.lineTo(cx+11,cy-56); ctx.lineTo(cx+12,cy-38); ctx.lineTo(cx-12,cy-38);
-  ctx.closePath(); ctx.fill();
-  ctx.fillStyle=c.dressAccent; ctx.fillRect(cx-12,cy-40,24,2);
+  if (c.outfit === 'top') {
+    // ── Byxor (raka byxben + midjeband) ──
+    ctx.fillStyle = c.pantsColor;
+    ctx.fillRect(cx-13, cy-38, 12, 16); // vänster byxben
+    ctx.fillRect(cx+1,  cy-38, 12, 16); // höger byxben
+    ctx.fillRect(cx-13, cy-38, 25, 5);  // midja/grenskygg
+    // Söm
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.fillRect(cx-1, cy-38, 2, 16);
+    // Midjeband
+    ctx.fillStyle = c.dressAccent;
+    ctx.fillRect(cx-14, cy-41, 28, 4);
+    // ── Topp (kortare, tightare) ──
+    ctx.fillStyle = c.dress;
+    ctx.beginPath();
+    ctx.moveTo(cx-11,cy-56); ctx.lineTo(cx+11,cy-56);
+    ctx.lineTo(cx+12,cy-38); ctx.lineTo(cx-12,cy-38);
+    ctx.closePath(); ctx.fill();
+    // Halsringning
+    ctx.fillStyle = c.dressTrim;
+    ctx.beginPath();
+    ctx.moveTo(cx-5,cy-56); ctx.quadraticCurveTo(cx,cy-52,cx+5,cy-56);
+    ctx.lineTo(cx+3,cy-56); ctx.quadraticCurveTo(cx,cy-54,cx-3,cy-56);
+    ctx.fill();
+    // Hem
+    ctx.fillStyle = c.dressAccent;
+    ctx.fillRect(cx-12,cy-39,24,2);
+  } else {
+    // ── Klänning (A-linje kjol + överdel) ──
+    ctx.fillStyle=c.dress; ctx.beginPath();
+    ctx.moveTo(cx-12,cy-38); ctx.lineTo(cx+12,cy-38);
+    ctx.lineTo(cx+17,cy-22); ctx.lineTo(cx-17,cy-22);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle=c.dressTrim; ctx.fillRect(cx-17,cy-23,34,2);
+    // Överdel
+    ctx.fillStyle=c.dress; ctx.beginPath();
+    ctx.moveTo(cx-11,cy-56); ctx.lineTo(cx+11,cy-56);
+    ctx.lineTo(cx+12,cy-38); ctx.lineTo(cx-12,cy-38);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle=c.dressAccent; ctx.fillRect(cx-12,cy-40,24,2);
+  }
 
   // Back arm
   ctx.save(); ctx.translate(cx-10,cy-54); ctx.rotate(armSwing*0.5);

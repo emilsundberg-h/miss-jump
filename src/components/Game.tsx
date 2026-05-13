@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import {
   createGame, GameStateKind,
   CharCustom, DEFAULT_CUSTOM,
-  HAIR_PRESETS, DRESS_PRESETS,
+  HAIR_PRESETS, DRESS_PRESETS, PANTS_PRESETS,
   drawPreviewChar,
 } from "@/lib/game";
 
@@ -128,17 +128,28 @@ export default function Game() {
                   onClick={() => setCustom(c => ({ ...c, hairLength: 'long' }))}
                 >Långt</LengthToggle>
               </PickerRow>
-              <PickerRow label="Klänning">
+              <PickerRow label="Outfit">
+                <LengthToggle active={custom.outfit === 'dress'} onClick={() => setCustom(c => ({ ...c, outfit: 'dress' }))}>Klänning</LengthToggle>
+                <LengthToggle active={custom.outfit === 'top'}   onClick={() => setCustom(c => ({ ...c, outfit: 'top'   }))}>Topp</LengthToggle>
+              </PickerRow>
+              <PickerRow label={custom.outfit === 'top' ? 'Topp' : 'Klänning'}>
                 {DRESS_PRESETS.map(p => (
-                  <Swatch
-                    key={p.key}
-                    color={p.swatch}
-                    label={p.label}
+                  <Swatch key={p.key} color={p.swatch} label={p.label}
                     active={custom.dress === p.dress}
                     onClick={() => setCustom(c => ({ ...c, dress: p.dress, dressTrim: p.dressTrim, dressAccent: p.dressAccent }))}
                   />
                 ))}
               </PickerRow>
+              {custom.outfit === 'top' && (
+                <PickerRow label="Byxor">
+                  {PANTS_PRESETS.map(p => (
+                    <Swatch key={p.key} color={p.swatch} label={p.label}
+                      active={custom.pantsColor === p.color}
+                      onClick={() => setCustom(c => ({ ...c, pantsColor: p.color }))}
+                    />
+                  ))}
+                </PickerRow>
+              )}
             </div>
           </div>
 
