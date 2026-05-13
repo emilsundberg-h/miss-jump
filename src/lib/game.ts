@@ -1816,7 +1816,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (gstate === 'lose') { tries++; startGame(); return; }
     if (gstate !== 'play') return;
     if (levelId === 3) { flVY = FL_FLAP_V; return; }
-    if (levelId === 4) return; // falling mode uses pointerDown with position
+    if (levelId === 4 && fall4Phase === 'fall') return; // fall phase uses pointerDown with position
     if (!player.alive) return;
     if (player.jumps < 2) {
       player.vy = player.jumps === 0 ? JUMP_VEL : JUMP_VEL * 0.86;
@@ -1829,7 +1829,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   }
 
   function releaseJump() {
-    if (levelId <= 2) {
+    if (levelId <= 2 || (levelId === 4 && fall4Phase === 'run')) {
       if (player.vy < 0 && player.holding) {
         const t = Math.min(1, player.holdTime / MAX_HOLD);
         player.vy *= JUMP_CUT_MIN + (1 - JUMP_CUT_MIN) * t;
@@ -1844,7 +1844,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (gstate === 'lose') { tries++; startGame(); return; }
     if (gstate !== 'play') return;
     if (levelId === 3) { flVY = FL_FLAP_V; return; }
-    if (levelId === 4) {
+    if (levelId === 4 && fall4Phase === 'fall') {
       if (x < W / 2) fallHoldL++; else fallHoldR++;
       return;
     }
@@ -1852,7 +1852,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   }
 
   function pointerUp(x: number, y: number) {
-    if (levelId === 4) {
+    if (levelId === 4 && fall4Phase === 'fall') {
       if (x < W / 2) fallHoldL = Math.max(0, fallHoldL - 1);
       else            fallHoldR = Math.max(0, fallHoldR - 1);
     } else {
