@@ -255,7 +255,7 @@ export default function Game() {
       </Overlay>
 
       {/* ── In-game start ── */}
-      <Overlay show={!!levelId && state === "start"}>
+      <Overlay show={!!levelId && state === "start"} onClick={pressJump}>
         <TitleCard>
           <Eyebrow>{["","Forest Tour · Act 1","Cloud Tour · Act 2","Miss Flappy · Act 3","Free Fall · Act 4","Mic Drop · Act 5"][levelId!]}</Eyebrow>
           <BigTitle>Miss Jump</BigTitle>
@@ -270,7 +270,9 @@ export default function Game() {
             : "Top-down arena. Use the joystick to move. Tap the stage to throw your mic. Hit all 40 artists!"
           }</Subtitle>
           <Cta onClick={pressJump}>Start the Show <Key>SPACE</Key></Cta>
-          <BackLink onClick={() => setLevelId(null)}>← Change Level</BackLink>
+          <div onClick={e => e.stopPropagation()}>
+            <BackLink onClick={() => setLevelId(null)}>← Change Level</BackLink>
+          </div>
         </TitleCard>
       </Overlay>
 

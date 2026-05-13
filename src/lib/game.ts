@@ -832,8 +832,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   function enemySpeed() {
     // Reaches current-end speed (185) at 50%, then up to 220 px/s
     const t = Math.min(1, l5SpawnCount / L5_TOTAL);
-    if (t < 0.5) return 95 + t * 180;            // 95 → 185 px/s in first half
-    return 185 + (t - 0.5) * 70;                 // 185 → 220 px/s in second half
+    return 95 + Math.min(0.5, t) * 180;           // 95 → 185 px/s, capped at 185
   }
 
   function startLevel5() {
