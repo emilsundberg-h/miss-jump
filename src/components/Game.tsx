@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import {
   createGame, GameStateKind,
   CharCustom, DEFAULT_CUSTOM,
-  HAIR_PRESETS, DRESS_PRESETS, PANTS_PRESETS,
+  HAIR_PRESETS, DRESS_PRESETS, PANTS_PRESETS, SKIN_PRESETS,
   drawPreviewChar,
 } from "@/lib/game";
 
@@ -61,6 +61,7 @@ export default function Game() {
   const [winData,  setWinData]  = useState<{ score: number; tries: number } | null>(null);
   const [tries,    setTries]    = useState(1);
   const [tapHint,  setTapHint]  = useState(false);
+  const [copied,   setCopied]   = useState(false);
 
   // Adjust volume whenever game state changes
   useEffect(() => {
@@ -182,6 +183,14 @@ export default function Game() {
                 <LengthToggle active={custom.hairLength === 'short'} onClick={() => setCustom(c => ({ ...c, hairLength: 'short' }))}>Short</LengthToggle>
                 <LengthToggle active={custom.hairLength === 'long'}  onClick={() => setCustom(c => ({ ...c, hairLength: 'long'  }))}>Long</LengthToggle>
               </PickerRow>
+              <PickerRow label="Skin">
+                {SKIN_PRESETS.map(p => (
+                  <Swatch key={p.key} color={p.swatch} label={p.label}
+                    active={custom.skin === p.skin}
+                    onClick={() => setCustom(c => ({ ...c, skin: p.skin }))}
+                  />
+                ))}
+              </PickerRow>
               <PickerRow label="Outfit">
                 <LengthToggle active={custom.outfit === 'dress'} onClick={() => setCustom(c => ({ ...c, outfit: 'dress' }))}>Dress</LengthToggle>
                 <LengthToggle active={custom.outfit === 'top'}   onClick={() => setCustom(c => ({ ...c, outfit: 'top'   }))}>Top</LengthToggle>
@@ -252,15 +261,27 @@ export default function Game() {
       <Overlay show={!!levelId && state === "lose"} onClick={pressJump}>
         <TitleCard>
           <div style={{ fontSize: 44, marginBottom: 6 }}>🎤</div>
-          <Eyebrow>Lost the Beat</Eyebrow>
-          <BigTitle style={{ fontSize: "clamp(36px,5vw,60px)" }}>Take Two?</BigTitle>
-          <Subtitle>The audience is still waiting. Give it another go.</Subtitle>
+          <Eyebrow>Tappade taktkänslan</Eyebrow>
+          <BigTitle style={{ fontSize: "clamp(36px,5vw,60px)" }}>Tagning {tries + 1}?</BigTitle>
+          <Subtitle>Publiken väntar fortfarande. Ta sats igen.</Subtitle>
           <div style={{ margin: "4px 0 18px" }}>
-            <Stat label="Attempts" value={String(tries)} />
+            <Stat label="Försök" value={String(tries)} />
           </div>
-          <Cta onClick={pressJump}>Try Again <Key>SPACE</Key></Cta>
-          <div onClick={e => e.stopPropagation()}>
-            <BackLink onClick={() => setLevelId(null)}>← Change Level</BackLink>
+          <Cta onClick={pressJump}>Försök igen <Key>SPACE</Key></Cta>
+          <div onClick={e => e.stopPropagation()} style={{ marginTop: 10 }}>
+            <DebugCopyRow
+              levelId={levelId!}
+              tries={tries}
+              progress={progress}
+              score={score}
+              copied={copied}
+              onCopy={() => {
+                const names = ["","Skogsturné","Molnturné","Miss Flappy","Fritt Fall"];
+                const txt = `Bana ${levelId} ${names[levelId!]} · Försök ${tries} · Dog vid ${Math.round(progress * 100)}% · Poäng ${score}`;
+                navigator.clipboard.writeText(txt).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+              }}
+            />
+            <BackLink onClick={() => setLevelId(null)}>← Byt bana</BackLink>
           </div>
         </TitleCard>
       </Overlay>
@@ -551,6 +572,32 @@ function HudCard({ label, value, progress }: { label: string; value?: string; pr
           <div style={{ height: "100%", width: `${(progress*100).toFixed(1)}%`, background: "linear-gradient(90deg,#ffb86b 0%,#ff6f9c 50%,#c46cff 100%)", borderRadius: 99, transition: "width 0.12s linear" }} />
         </div>
       )}
+    </div>
+  );
+}
+
+function DebugCopyRow({ levelId, tries, progress, score, copied, onCopy }: {
+  levelId: number; tries: number; progress: number; score: number; copied: boolean; onCopy: () => void;
+}) {
+  const names = ["", "Skogsturné", "Molnturné", "Miss Flappy", "Fritt Fall"];
+  const pct = Math.round(progress * 100);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "8px 0 4px", justifyContent: "center" }}>
+      <span style={{ fontSize: 11, color: "#7a5a6a", fontFamily: "ui-monospace,monospace" }}>
+        B{levelId} {names[levelId]} · {pct}% · ⭐{score}
+      </span>
+      <button
+        onClick={onCopy}
+        style={{
+          fontSize: 11, padding: "3px 10px", borderRadius: 99,
+          background: copied ? "#5a9060" : "rgba(90,50,70,0.12)",
+          color: copied ? "#fff" : "#7a3a5a",
+          border: "1px solid rgba(90,50,70,0.2)",
+          cursor: "pointer", transition: "all 0.2s", whiteSpace: "nowrap",
+        }}
+      >
+        {copied ? "✓ Kopierat" : "Kopiera"}
+      </button>
     </div>
   );
 }

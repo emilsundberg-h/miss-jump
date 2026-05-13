@@ -48,18 +48,24 @@ const FALL_OBS_DEFS: { wy: number; gapFrac: number; gapWFrac: number }[] = (() =
   const list: { wy: number; gapFrac: number; gapWFrac: number }[] = [];
   let s = 9876543;
   const r = () => { s = (s * 1664525 + 1013904223) >>> 0; return (s >>> 0) / 4294967296; };
-  // Gaps left or right — never centre, so hovering middle is never safe.
-  // Each gap is clamped to MAX_SHIFT from the previous so consecutive gaps are always reachable.
-  // Width 22–30% of screen. Spacing tightens from 320 → 220 px over the level.
-  const MAX_SHIFT = 0.22; // max fraction of screen width the player can cross between obstacles
-  let prevCentre = 0.5;
+  // Gaps biased left or right so hovering centre is never safe.
+  // Uses edge-to-edge reachability: each gap is clamped so it's reachable from
+  // the WORST-CASE position (either edge) of the previous gap.
+  // REACH = 0.18 covers physical lateral travel + pre-positioning margin.
+  // Spacing tightens from 320 → 220 px, width 22–30% of screen.
+  const REACH = 0.18;
+  let prevGL = 0.35, prevGR = 0.65; // virtual starting gap at centre
   for (let y = 900; y < 10500; y += Math.max(220, 320 - y / 60)) {
     const left = r() < 0.5;
-    const raw = left ? 0.10 + r() * 0.22 : 0.68 + r() * 0.22; // desired centre
+    const rawCentre = left ? 0.10 + r() * 0.22 : 0.68 + r() * 0.22;
     const hw = 0.11 + r() * 0.04;
-    const centre = Math.max(prevCentre - MAX_SHIFT, Math.min(prevCentre + MAX_SHIFT, raw));
-    prevCentre = centre;
-    list.push({ wy: y, gapFrac: Math.max(0.02, Math.min(0.75, centre - hw)), gapWFrac: hw * 2 });
+    // maxCentre ensures gL ≤ prevGL + REACH (reachable from left edge moving right)
+    // minCentre ensures gR ≥ prevGR - REACH (reachable from right edge moving left)
+    const centre = Math.max(prevGR - REACH - hw, Math.min(prevGL + REACH + hw, rawCentre));
+    const gL = Math.max(0.02, centre - hw);
+    const gR = Math.min(0.98, centre + hw);
+    prevGL = gL; prevGR = gR;
+    list.push({ wy: y, gapFrac: gL, gapWFrac: gR - gL });
   }
   return list;
 })();
@@ -369,6 +375,7 @@ export interface CharCustom {
   hairLength: 'short' | 'long';
   outfit: 'dress' | 'top';
   pantsColor: string;
+  skin: string;
 }
 export const DEFAULT_CUSTOM: CharCustom = {
   hair: '#c87840', hairMid: '#b06828', hairHi: '#e0a868',
@@ -377,6 +384,7 @@ export const DEFAULT_CUSTOM: CharCustom = {
   hairLength: 'short',
   outfit: 'dress',
   pantsColor: '#161016',
+  skin: '#f4d2b8',
 };
 export const HAIR_PRESETS: { key: string; label: string; swatch: string; hair: string; hairMid: string; hairHi: string }[] = [
   { key:'auburn',  label:'Auburn',  swatch:'#c87840', hair:'#c87840', hairMid:'#b06828', hairHi:'#e0a868' },
@@ -402,6 +410,15 @@ export const PANTS_PRESETS: { key: string; label: string; swatch: string; color:
   { key:'beige',  label:'Beige',    swatch:'#c4a880', color:'#c4a880' },
   { key:'green',  label:'Grön',     swatch:'#1a4020', color:'#1a4020' },
   { key:'rust',   label:'Rostbrun', swatch:'#6a2810', color:'#6a2810' },
+];
+
+export const SKIN_PRESETS: { key: string; label: string; swatch: string; skin: string }[] = [
+  { key:'1', label:'1', swatch:'#fde4c4', skin:'#fde4c4' },
+  { key:'2', label:'2', swatch:'#f4d2b8', skin:'#f4d2b8' },
+  { key:'3', label:'3', swatch:'#dfa870', skin:'#dfa870' },
+  { key:'4', label:'4', swatch:'#c07840', skin:'#c07840' },
+  { key:'5', label:'5', swatch:'#8a4c24', skin:'#8a4c24' },
+  { key:'6', label:'6', swatch:'#4e2210', skin:'#4e2210' },
 ];
 
 /** Draw Miss Li on any canvas — used for in-game rendering and the preview. */
@@ -449,7 +466,7 @@ function renderMissLi(
   }
 
   // Legs — pants-coloured when outfit='top', skin when dress
-  const legFill = c.outfit === 'top' ? c.pantsColor : '#f4d2b8';
+  const legFill = c.outfit === 'top' ? c.pantsColor : c.skin;
   // Back leg
   ctx.save(); ctx.translate(cx-6, cy-22); ctx.rotate(-legSwing*0.6);
   ctx.fillStyle=legFill; ctx.fillRect(-4,0,8,22);
@@ -503,16 +520,16 @@ function renderMissLi(
 
   // Back arm
   ctx.save(); ctx.translate(cx-10,cy-54); ctx.rotate(armSwing*0.5);
-  ctx.fillStyle='#f4d2b8'; ctx.fillRect(-3,0,6,18);
+  ctx.fillStyle=c.skin; ctx.fillRect(-3,0,6,18);
   ctx.fillStyle=c.dress; ctx.fillRect(-4,0,8,6); ctx.restore();
   // Front arm
   ctx.save(); ctx.translate(cx+10,cy-54); ctx.rotate(isStage ? -0.7 : -armSwing*0.5);
-  ctx.fillStyle='#f4d2b8'; ctx.fillRect(-3,0,6,18);
+  ctx.fillStyle=c.skin; ctx.fillRect(-3,0,6,18);
   ctx.fillStyle=c.dress; ctx.fillRect(-4,0,8,6);
-  ctx.fillStyle='#f4d2b8'; ctx.beginPath(); ctx.arc(0,18,3.5,0,TAU); ctx.fill(); ctx.restore();
+  ctx.fillStyle=c.skin; ctx.beginPath(); ctx.arc(0,18,3.5,0,TAU); ctx.fill(); ctx.restore();
 
   // Neck
-  ctx.fillStyle='#f4d2b8'; ctx.fillRect(cx-3,cy-60,6,6);
+  ctx.fillStyle=c.skin; ctx.fillRect(cx-3,cy-60,6,6);
 
   // Hair back volume (drawn BEFORE head) — stays within head circle, max hy+9 (chin level)
   ctx.fillStyle=c.hair;
@@ -532,7 +549,7 @@ function renderMissLi(
   ctx.fill();
 
   // Head
-  ctx.fillStyle='#f7d8be'; ctx.beginPath(); ctx.arc(hx,hy,11,0,TAU); ctx.fill();
+  ctx.fillStyle=c.skin; ctx.beginPath(); ctx.arc(hx,hy,11,0,TAU); ctx.fill();
 
   // Blush
   ctx.fillStyle='rgba(220,100,120,0.4)';
@@ -807,16 +824,16 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   const l5MicY2 = () => l5SY() + 70;
 
   function spawnInterval() {
-    if (l5SpawnCount < 6)  return 1.8;
-    if (l5SpawnCount < 18) return 1.1;
-    if (l5SpawnCount < 32) return 0.7;
-    return 0.45;
+    if (l5SpawnCount < 8)  return 3.2;  // slow opener
+    if (l5SpawnCount < 20) return 2.2;  // building up
+    if (l5SpawnCount < 32) return 1.6;  // challenging
+    return 1.1;                          // final push
   }
   function enemySpeed() {
-    if (l5SpawnCount < 8)  return 115;
-    if (l5SpawnCount < 20) return 160;
-    if (l5SpawnCount < 32) return 210;
-    return 270;
+    if (l5SpawnCount < 8)  return 78;
+    if (l5SpawnCount < 20) return 108;
+    if (l5SpawnCount < 32) return 145;
+    return 185;
   }
 
   function startLevel5() {
@@ -825,7 +842,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     l5JDX = 0; l5JDY = 0;
     l5MicOut = false; l5MicDist = 0;
     l5Enemies = []; l5Spawns = [];
-    l5SpawnTimer = 0.8; l5SpawnCount = 0; l5ElimCount = 0;
+    l5SpawnTimer = 2.0; l5SpawnCount = 0; l5ElimCount = 0;
     l5WinPhase = false; l5WinT = 0; l5EnemyId = 0;
     gstate = 'play'; score = 0;
     cb.onStateChange('play'); cb.onScore(0); cb.onProgress(0);
@@ -1015,7 +1032,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     const drawHuman = (
       hx: number, hy: number, rot: number,
       outfitC: string, accentC: string, hairC: string,
-      isMissLi = false, alpha = 1,
+      isMissLi = false, alpha = 1, skinC = '#f4d2b8',
     ) => {
       ctx.save();
       ctx.globalAlpha = alpha;
@@ -1039,12 +1056,12 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
       ctx.beginPath(); ctx.ellipse(0, 17, 13, 5, 0, 0, TAU); ctx.fill();
 
       // Arms (skin)
-      ctx.fillStyle = '#f4d2b8';
+      ctx.fillStyle = skinC;
       ctx.beginPath(); ctx.ellipse(-13, 0, 4, 8, 0.4, 0, TAU); ctx.fill();
       ctx.beginPath(); ctx.ellipse(13, 0, 4, 8, -0.4, 0, TAU); ctx.fill();
 
       // Neck
-      ctx.fillStyle = '#f4d2b8';
+      ctx.fillStyle = skinC;
       ctx.beginPath(); ctx.ellipse(0, -5, 4, 5, 0, 0, TAU); ctx.fill();
 
       // Hair back volume
@@ -1060,7 +1077,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
       }
 
       // Head (face circle)
-      ctx.fillStyle = '#f7d8be';
+      ctx.fillStyle = skinC;
       ctx.beginPath(); ctx.arc(0, -10, 9, 0, TAU); ctx.fill();
 
       // Eyes — two small dots
@@ -1164,7 +1181,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     }
 
     // Player (Miss Li)
-    drawHuman(l5PX, l5PY, l5PAngle, custom.dress, custom.dressAccent, custom.hair, true);
+    drawHuman(l5PX, l5PY, l5PAngle, custom.dress, custom.dressAccent, custom.hair, true, 1, custom.skin);
 
     // Particles
     drawParticles();
