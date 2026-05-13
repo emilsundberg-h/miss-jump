@@ -11,7 +11,7 @@ import {
 type LevelId = 1 | 2 | 3 | 4;
 
 // Volume targets per game state
-const VOL = { menu: 0.25 as number, play: 0.7 as number, dead: 0.15 as number };
+const VOL = { menu: 0.12 as number, play: 0.7 as number, dead: 0.07 as number };
 
 function useMusic() {
   const audio = useRef<HTMLAudioElement | null>(null);
