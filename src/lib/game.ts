@@ -824,16 +824,16 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   const l5MicY2 = () => l5SY() + 70;
 
   function spawnInterval() {
-    if (l5SpawnCount < 8)  return 3.2;  // slow opener
-    if (l5SpawnCount < 20) return 2.2;  // building up
-    if (l5SpawnCount < 32) return 1.6;  // challenging
-    return 1.1;                          // final push
+    // Continuous ramp: reaches current-end difficulty (1.1s) at 50%, then keeps going to 0.7s
+    const t = Math.min(1, l5SpawnCount / L5_TOTAL);
+    if (t < 0.5) return 2.4 - t * 2.6;          // 2.4s → 1.1s in first half
+    return Math.max(0.7, 1.1 - (t - 0.5) * 0.8); // 1.1s → 0.7s in second half
   }
   function enemySpeed() {
-    if (l5SpawnCount < 8)  return 78;
-    if (l5SpawnCount < 20) return 108;
-    if (l5SpawnCount < 32) return 145;
-    return 185;
+    // Reaches current-end speed (185) at 50%, then up to 220 px/s
+    const t = Math.min(1, l5SpawnCount / L5_TOTAL);
+    if (t < 0.5) return 95 + t * 180;            // 95 → 185 px/s in first half
+    return 185 + (t - 0.5) * 70;                 // 185 → 220 px/s in second half
   }
 
   function startLevel5() {
