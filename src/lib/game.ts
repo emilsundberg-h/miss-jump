@@ -37,7 +37,14 @@ const FALL_OBS_DEFS: { wy: number; gapFrac: number; gapWFrac: number }[] = (() =
   const list: { wy: number; gapFrac: number; gapWFrac: number }[] = [];
   let s = 9876543;
   const r = () => { s = (s * 1664525 + 1013904223) >>> 0; return (s >>> 0) / 4294967296; };
-  for (let y = 450; y < 10500; y += 320 + r() * 160) list.push({ wy: y, gapFrac: 0.1 + r() * 0.62, gapWFrac: 0.22 + r() * 0.12 });
+  // First obstacle at y=900 — player needs time to see it and aim
+  // Gaps centre-biased (0.25–0.65) and width 28–40% of screen
+  for (let y = 900; y < 10500; y += 280 + r() * 140) {
+    // Bias gap toward center to force meaningful lateral movement
+    const centre = 0.25 + r() * 0.50;  // 0.25–0.75
+    const hw = 0.14 + r() * 0.08;      // half-width: 14–22%
+    list.push({ wy: y, gapFrac: Math.max(0.05, centre - hw), gapWFrac: hw * 2 });
+  }
   return list;
 })();
 const FALL_SPEED     = 300;   // px/s downward
@@ -189,12 +196,11 @@ const CLOUD_PAL = {
   sun: '#fff8e8', sunGlow: 'rgba(255,230,200,0.55)',
   cloudFar: '#fce4ef', cloudMid: '#ffd9e6',
   platformSurf: '#fff6fa', platformMid: '#ffd9e6', platformEdge: '#f0b0c8',
-  lightMain: '#ff6b9d', lightDark: '#c04878', lightGlow: 'rgba(255,107,157,0.40)',
   mist: 'rgba(255,180,210,0.35)',
   ambient: 'rgba(255,100,180,0.05)',
   stone: '#e0b8c8', stoneDark: '#c890a8', stoneLight: '#f0d0e0',
   moss: '#d890b0', mossLight: '#f0b0c8', grass: '#f0c8d8',
-  spike: '#ff6b9d', spikeHighlight: '#ffc0d8',
+  spike: '#7a8898', spikeHighlight: '#c8d4de',
   treeFar: '#e080b0', treeMid: '#c06090', treeNear: '#904070',
   waterTop: '#ffd9e6', waterBot: '#ff9ec0',
 };
@@ -501,7 +507,7 @@ function renderMissLi(
 }
 
 // ===== Main factory =====
-export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId: 1|2 = 1, custom: CharCustom = DEFAULT_CUSTOM): GameControls {
+export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId: 1|2|3|4 = 1, custom: CharCustom = DEFAULT_CUSTOM): GameControls {
   const ctx = canvas.getContext('2d')!;
   let DPR = 1, W = 0, H = 0;
 
@@ -814,23 +820,27 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   }
 
   function updateFalling(dt: number) {
-    fallWorldY += FALL_SPEED * dt;
+    // Speed ramps from 300 → 560 px/s over the level
+    const spd = Math.min(560, FALL_SPEED * (1 + fallWorldY / 4000));
+    fallWorldY += spd * dt;
     const moveX = (fallHoldR > 0 ? 1 : 0) - (fallHoldL > 0 ? 1 : 0);
-    fallX += moveX * FALL_SIDE_SPD * dt;
-    fallX = Math.max(20, Math.min(W - 20, fallX));
+    // Lateral speed also scales up
+    const latSpd = Math.min(420, FALL_SIDE_SPD * (1 + fallWorldY / 5000));
+    fallX += moveX * latSpd * dt;
+    fallX = Math.max(22, Math.min(W - 22, fallX));
 
-    const PW = 28, PH = 52;
+    const PW = 28, PH = 56;
     const camY = Math.max(0, fallWorldY - H * 0.35);
-    const screenY = fallWorldY - camY;
+    const screenY = fallWorldY - camY;  // feet position
 
-    // Obstacle collision
+    // Obstacle collision: player body spans [screenY-PH, screenY] (feet at screenY, head above)
     for (const o of FALL_OBS_DEFS) {
       const osy = o.wy - camY;
       if (osy + FALL_OBS_H < 0 || osy > H + 10) continue;
-      const gapX = o.gapFrac * W, gapW = o.gapWFrac * W;
-      if (screenY + PH > osy && screenY < osy + FALL_OBS_H) {
-        // Player collides unless in gap
-        const px1 = fallX - PW/2, px2 = fallX + PW/2;
+      if (screenY > osy && screenY - PH < osy + FALL_OBS_H) {
+        const gapX = o.gapFrac * W, gapW = o.gapWFrac * W;
+        const px1 = fallX - PW/2 + 5;
+        const px2 = fallX + PW/2 - 5;
         if (!(px1 >= gapX && px2 <= gapX + gapW)) { loseGame(); return; }
       }
     }
@@ -842,45 +852,95 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
 
   function drawFalling() {
     const camY = Math.max(0, fallWorldY - H * 0.35);
-    // Sky
+
+    // Sky gradient (deepens as player falls)
+    const depth = Math.min(1, fallWorldY / 6000);
     const sg = ctx.createLinearGradient(0, 0, 0, H);
-    sg.addColorStop(0, '#2a50a8'); sg.addColorStop(0.5, CLOUD_PAL.skyTop); sg.addColorStop(1, CLOUD_PAL.skyMid);
+    sg.addColorStop(0, `hsl(${230 - depth*40},${70-depth*20}%,${40-depth*15}%)`);
+    sg.addColorStop(0.6, CLOUD_PAL.skyTop);
+    sg.addColorStop(1, CLOUD_PAL.skyBot);
     ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H);
-    // Background parallax clouds
+
+    // Parallax background puffs
     for (const o of FALL_OBS_DEFS) {
-      const osy = o.wy * 0.3 - camY * 0.3;
-      if (osy < -60 || osy > H + 60) continue;
-      ctx.fillStyle = 'rgba(255,210,230,0.18)';
-      ctx.beginPath(); ctx.ellipse(o.gapFrac * W + W*0.2, osy, 90, 30, 0, 0, TAU); ctx.fill();
+      const osy = o.wy * 0.25 - camY * 0.25;
+      if (osy < -80 || osy > H + 80) continue;
+      ctx.fillStyle = 'rgba(255,200,225,0.14)';
+      ctx.beginPath(); ctx.ellipse(o.gapFrac * W * 0.8 + W * 0.1, osy, 110, 36, 0, 0, TAU); ctx.fill();
     }
-    // Obstacles
+
+    // Obstacles — approaching from below (higher world Y = first visible at bottom of screen)
     for (const o of FALL_OBS_DEFS) {
       const osy = o.wy - camY;
       if (osy + FALL_OBS_H < -10 || osy > H + 10) continue;
       drawFallingObstacle(osy, o.gapFrac * W, o.gapWFrac * W);
     }
-    // Stage at bottom
-    if (fallWorldY > FALL_WIN_Y - H) {
+
+    // ── Stage at bottom ────────────────────────────────────────────────────
+    if (fallWorldY > FALL_WIN_Y - H * 1.5) {
       const stageY = FALL_WIN_Y - camY;
-      ctx.fillStyle = CLOUD_PAL.platformMid; ctx.fillRect(0, stageY, W, H - stageY + 20);
+      // Stage floor (cloud platform)
+      ctx.fillStyle = CLOUD_PAL.platformMid; ctx.fillRect(0, stageY, W, H - stageY + 30);
+      ctx.fillStyle = CLOUD_PAL.platformSurf; ctx.fillRect(0, stageY, W, 6);
+
+      // Stage backdrop curtains
+      const cW = W * 0.38;
+      ctx.fillStyle = '#6a1430';
+      ctx.fillRect(0, stageY - 220, cW, 220);
+      ctx.fillRect(W - cW, stageY - 220, cW, 220);
+      // Curtain folds
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      for (let i = 0; i < 4; i++) {
+        ctx.fillRect(i * cW/4, stageY - 220, 6, 220);
+        ctx.fillRect(W - cW + i * cW/4, stageY - 220, 6, 220);
+      }
+      // Gold valance
+      ctx.fillStyle = '#c8902a';
+      ctx.fillRect(0, stageY - 224, cW, 8);
+      ctx.fillRect(W - cW, stageY - 224, cW, 8);
+
+      // Center backdrop
+      ctx.fillStyle = '#1a0e28';
+      ctx.fillRect(cW, stageY - 240, W - cW*2, 240);
+      // Sign
+      ctx.fillStyle = '#fff2c4'; ctx.fillRect(W/2 - 100, stageY - 200, 200, 44);
+      ctx.fillStyle = '#1f0e26'; ctx.font = '700 italic 18px "Playfair Display", serif';
+      ctx.textAlign = 'center'; ctx.fillText('MISS JUMP', W/2, stageY - 172);
+      ctx.font = '500 9px "Inter", sans-serif'; ctx.fillStyle = '#7a3a4a';
+      ctx.fillText('LIVE TONIGHT', W/2, stageY - 161);
+
+      // Spotlights from above
+      const beamA = 0.20;
+      const mx = W * 0.5;
+      const bg2 = ctx.createLinearGradient(mx, stageY - 240, mx, stageY);
+      bg2.addColorStop(0, `rgba(255,240,200,${beamA})`); bg2.addColorStop(1, 'rgba(255,240,200,0)');
+      ctx.fillStyle = bg2; ctx.beginPath();
+      ctx.moveTo(mx-15,stageY-240); ctx.lineTo(mx+15,stageY-240);
+      ctx.lineTo(mx+160,stageY); ctx.lineTo(mx-160,stageY); ctx.closePath(); ctx.fill();
+
       // Mic stand
-      const mx = W * 0.55;
-      ctx.fillStyle = '#2a1828'; ctx.fillRect(mx-2, stageY - 120, 3, 120);
-      ctx.beginPath(); ctx.arc(mx, stageY - 125, 8, 0, TAU); ctx.fill();
+      drawMicStand(mx, stageY);
+      drawSpeaker(mx - 180, stageY);
+      drawSpeaker(mx + 180, stageY);
     }
-    // Player — falling pose (slight back tilt)
+
+    // Player
     const playerSY = fallWorldY - camY;
     ctx.save();
     ctx.translate(fallX, playerSY);
     ctx.rotate(0.08);
     renderMissLi(ctx, 0, 0, 0.6, -0.5, true, false, custom);
     ctx.restore();
-    // Left/right indicators
+
+    // Left/right touch zones (subtle)
     if (gstate === 'play') {
-      ctx.fillStyle = 'rgba(255,255,255,0.06)';
-      ctx.fillRect(0, 0, W/2, H);
-      if (fallHoldL > 0) { ctx.fillStyle = 'rgba(255,200,220,0.12)'; ctx.fillRect(0, 0, W/2, H); }
-      if (fallHoldR > 0) { ctx.fillStyle = 'rgba(255,200,220,0.12)'; ctx.fillRect(W/2, 0, W/2, H); }
+      if (fallHoldL > 0) { ctx.fillStyle = 'rgba(255,180,210,0.10)'; ctx.fillRect(0, 0, W/2, H); }
+      if (fallHoldR > 0) { ctx.fillStyle = 'rgba(255,180,210,0.10)'; ctx.fillRect(W/2, 0, W/2, H); }
+      // Direction arrows hint (first 5 seconds)
+      if (fallWorldY < 1500) {
+        ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = 'bold 32px sans-serif';
+        ctx.textAlign = 'center'; ctx.fillText('◀', W * 0.18, H * 0.5); ctx.fillText('▶', W * 0.82, H * 0.5);
+      }
     }
   }
 
@@ -1097,34 +1157,34 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   }
 
   function drawSpikes() {
-    if (levelId === 2) { drawLightnings(); return; }
     const gy = groundY();
+    const isCloud = levelId === 2;
     for (const s of spikeDefs) {
       const sx = s.x - camX, sy = gy - s.y;
       if (sx + SPIKE_W < -10 || sx > W + 10) continue;
 
-      // Dark shadow under spike for separation from platform
-      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      // Shadow under spike
+      ctx.fillStyle = isCloud ? 'rgba(80,90,120,0.22)' : 'rgba(0,0,0,0.35)';
       ctx.beginPath(); ctx.ellipse(sx + SPIKE_W/2, sy - 1, SPIKE_W*0.55, 4, 0, 0, TAU); ctx.fill();
 
-      // Main spike body: warm bone/ivory — high contrast against dark stone
-      ctx.fillStyle = '#e8d8a8';
+      // Main spike body
+      ctx.fillStyle = isCloud ? '#b0bcc8' : '#e8d8a8';
       ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx+SPIKE_W/2, sy-SPIKE_H); ctx.lineTo(sx+SPIKE_W, sy); ctx.closePath(); ctx.fill();
 
-      // Right face: darker warm tone for depth
-      ctx.fillStyle = '#c0a870';
+      // Right face (depth)
+      ctx.fillStyle = isCloud ? '#7a8898' : '#c0a870';
       ctx.beginPath(); ctx.moveTo(sx+SPIKE_W/2, sy-SPIKE_H); ctx.lineTo(sx+SPIKE_W/2+5, sy-SPIKE_H+14); ctx.lineTo(sx+SPIKE_W-3, sy-2); ctx.closePath(); ctx.fill();
 
-      // Sharp tip accent
-      ctx.fillStyle = '#fff8e0';
+      // Tip highlight
+      ctx.fillStyle = isCloud ? '#dce8f0' : '#fff8e0';
       ctx.beginPath(); ctx.arc(sx+SPIKE_W/2, sy-SPIKE_H+1, 2, 0, TAU); ctx.fill();
 
-      // Dark outline for crispness
-      ctx.strokeStyle = '#1a1008'; ctx.lineWidth = 1.2;
+      // Outline
+      ctx.strokeStyle = isCloud ? '#5a6270' : '#1a1008'; ctx.lineWidth = 1.2;
       ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx+SPIKE_W/2, sy-SPIKE_H); ctx.lineTo(sx+SPIKE_W, sy); ctx.stroke();
 
-      // Base root embedded in platform
-      ctx.fillStyle = '#a89060'; ctx.fillRect(sx+3, sy-5, SPIKE_W-6, 5);
+      // Base embedded in platform
+      ctx.fillStyle = isCloud ? '#8090a0' : '#a89060'; ctx.fillRect(sx+3, sy-5, SPIKE_W-6, 5);
     }
   }
 
@@ -1422,48 +1482,6 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     ctx.fillStyle = CLOUD_PAL.platformSurf;
     ctx.fillRect(sx, stageTopY - 2, p.w, 4);
     ctx.restore();
-  }
-
-  function drawLightnings() {
-    const gy = groundY();
-    for (const s of spikeDefs) {
-      const sx = s.x - camX, sy = gy - s.y;
-      if (sx + SPIKE_W < -10 || sx > W + 10) continue;
-      const cx = sx + SPIKE_W / 2;
-      // Glow
-      ctx.save();
-      ctx.globalAlpha = 0.32;
-      ctx.fillStyle = CLOUD_PAL.lightGlow;
-      ctx.beginPath(); ctx.arc(cx, sy - SPIKE_H * 0.5, SPIKE_W * 0.85, 0, TAU); ctx.fill();
-      ctx.restore();
-      // Bolt shape
-      ctx.fillStyle = CLOUD_PAL.lightMain;
-      ctx.beginPath();
-      ctx.moveTo(cx + 5,  sy - SPIKE_H);
-      ctx.lineTo(cx - 2,  sy - SPIKE_H * 0.56);
-      ctx.lineTo(cx + 7,  sy - SPIKE_H * 0.52);
-      ctx.lineTo(cx - 4,  sy);
-      ctx.lineTo(cx + 2,  sy - SPIKE_H * 0.48);
-      ctx.lineTo(cx - 6,  sy - SPIKE_H * 0.52);
-      ctx.closePath(); ctx.fill();
-      // Inner highlight
-      ctx.fillStyle = '#fffce0';
-      ctx.beginPath();
-      ctx.moveTo(cx + 4,  sy - SPIKE_H + 2);
-      ctx.lineTo(cx - 0,  sy - SPIKE_H * 0.60);
-      ctx.lineTo(cx + 5,  sy - SPIKE_H * 0.58);
-      ctx.closePath(); ctx.fill();
-      // Outline
-      ctx.strokeStyle = CLOUD_PAL.lightDark; ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.moveTo(cx + 5,  sy - SPIKE_H);
-      ctx.lineTo(cx - 2,  sy - SPIKE_H * 0.56);
-      ctx.lineTo(cx + 7,  sy - SPIKE_H * 0.52);
-      ctx.lineTo(cx - 4,  sy);
-      ctx.stroke();
-      // Base embedded
-      ctx.fillStyle = CLOUD_PAL.lightDark; ctx.fillRect(sx + 3, sy - 4, SPIKE_W - 6, 4);
-    }
   }
 
   function drawVignette() {

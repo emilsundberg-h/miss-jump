@@ -195,7 +195,7 @@ export default function Game() {
       </Overlay>
 
       {/* ── Lose ── */}
-      <Overlay show={!!levelId && state === "lose"}>
+      <Overlay show={!!levelId && state === "lose"} onClick={pressJump}>
         <TitleCard>
           <div style={{ fontSize: 44, marginBottom: 6 }}>🎤</div>
           <Eyebrow>Tappade taktkänslan</Eyebrow>
@@ -339,9 +339,9 @@ function LevelCard({ num, title, description, difficulty, mechanic, palette, onC
 
 // ── Shared overlays ──────────────────────────────────────────────────────────
 
-function Overlay({ show, children }: { show: boolean; children: React.ReactNode }) {
+function Overlay({ show, children, onClick }: { show: boolean; children: React.ReactNode; onClick?: () => void }) {
   return (
-    <div style={{
+    <div onClick={onClick} style={{
       position: "fixed", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
       background: "radial-gradient(ellipse at center, rgba(20,14,26,0.55) 0%, rgba(8,6,12,0.78) 100%)",
       backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)",
