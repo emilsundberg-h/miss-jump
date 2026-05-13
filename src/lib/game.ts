@@ -807,10 +807,10 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   const l5MicY2 = () => l5SY() + 70;
 
   function spawnInterval() {
-    if (l5SpawnCount < 8)  return 2.6;
-    if (l5SpawnCount < 20) return 1.8;
-    if (l5SpawnCount < 32) return 1.2;
-    return 0.8;
+    if (l5SpawnCount < 6)  return 1.8;
+    if (l5SpawnCount < 18) return 1.1;
+    if (l5SpawnCount < 32) return 0.7;
+    return 0.45;
   }
   function enemySpeed() {
     if (l5SpawnCount < 8)  return 115;
@@ -825,7 +825,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     l5JDX = 0; l5JDY = 0;
     l5MicOut = false; l5MicDist = 0;
     l5Enemies = []; l5Spawns = [];
-    l5SpawnTimer = 1.5; l5SpawnCount = 0; l5ElimCount = 0;
+    l5SpawnTimer = 0.8; l5SpawnCount = 0; l5ElimCount = 0;
     l5WinPhase = false; l5WinT = 0; l5EnemyId = 0;
     gstate = 'play'; score = 0;
     cb.onStateChange('play'); cb.onScore(0); cb.onProgress(0);
@@ -1101,27 +1101,66 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
       drawHuman(e.x, e.y, e.angle, e.color, hiColor, HAIR_COLS[hIdx]);
     }
 
-    // Mic (flying)
-    if (l5MicOut) {
-      const trail = l5MicPhase === 'flying' ? 0.6 : 0.35;
+    // ── Microphone drawing helper (top-down, grille at top of local space) ────
+    const drawMic = (mx: number, my: number, rot: number, scale = 1) => {
       ctx.save();
-      ctx.shadowBlur = 14; ctx.shadowColor = '#ffd070';
-      ctx.translate(l5MicX, l5MicY);
-      ctx.rotate(Math.atan2(l5MicVY, l5MicVX));
-      ctx.fillStyle = '#ffe060';
-      ctx.beginPath(); ctx.ellipse(0, 0, 11, 5, 0, 0, TAU); ctx.fill();
-      ctx.fillStyle = '#8a6020'; ctx.fillRect(-2, 5, 4, 11);
-      // Grille dots
-      ctx.fillStyle = '#c8a040';
-      for (let i = -3; i <= 3; i += 3) { ctx.beginPath(); ctx.arc(i, 0, 1, 0, TAU); ctx.fill(); }
+      ctx.translate(mx, my);
+      ctx.rotate(rot + Math.PI / 2);  // grille faces forward
+      ctx.scale(scale, scale);
+
+      // Handle (bottom, dark grip)
+      ctx.fillStyle = '#2a1a08';
+      ctx.beginPath(); ctx.roundRect(-3, 5, 6, 16, 3); ctx.fill();
+      // Grip rings
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1.2;
+      for (let gy = 8; gy <= 18; gy += 4) {
+        ctx.beginPath(); ctx.moveTo(-3, gy); ctx.lineTo(3, gy); ctx.stroke();
+      }
+      // Body / shaft
+      ctx.fillStyle = '#b07818';
+      ctx.beginPath(); ctx.roundRect(-4, -2, 8, 8, 2); ctx.fill();
+      // Gold band ring
+      ctx.fillStyle = '#f0d050';
+      ctx.beginPath(); ctx.roundRect(-4.5, -1, 9, 2.5, 1); ctx.fill();
+
+      // Grille capsule (dark mesh sphere — the most recognisable mic part)
+      ctx.fillStyle = '#18101e';
+      ctx.beginPath(); ctx.arc(0, -8, 8, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#201628';
+      ctx.beginPath(); ctx.arc(0, -9, 7, 0, TAU); ctx.fill();
+      // Mesh dot grid on grille
+      ctx.fillStyle = 'rgba(255,255,255,0.22)';
+      for (let gx = -5; gx <= 5; gx += 3) {
+        for (let gy2 = -14; gy2 <= -3; gy2 += 3) {
+          if (gx * gx + (gy2 + 8) * (gy2 + 8) < 44) {
+            ctx.beginPath(); ctx.arc(gx, gy2, 1.1, 0, TAU); ctx.fill();
+          }
+        }
+      }
+      // Grille outline
+      ctx.strokeStyle = 'rgba(140,100,200,0.5)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(0, -8, 8, 0, TAU); ctx.stroke();
+
       ctx.restore();
-      ctx.fillStyle = `rgba(255,220,80,${trail})`;
-      ctx.beginPath(); ctx.arc(l5MicX - l5MicVX*0.04, l5MicY - l5MicVY*0.04, 4, 0, TAU); ctx.fill();
+    };
+
+    // Mic (flying) — spins as it travels
+    if (l5MicOut) {
+      const spinAngle = Math.atan2(l5MicVY, l5MicVX) + l5MicDist * 0.06; // spin
+      // Motion trail
+      const trail = l5MicPhase === 'flying' ? 0.5 : 0.28;
+      ctx.save();
+      ctx.globalAlpha = trail;
+      ctx.fillStyle = '#ffd040';
+      ctx.beginPath(); ctx.arc(l5MicX - l5MicVX*0.07, l5MicY - l5MicVY*0.07, 5, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(l5MicX - l5MicVX*0.14, l5MicY - l5MicVY*0.14, 3, 0, TAU); ctx.fill();
+      ctx.restore();
+      ctx.save(); ctx.shadowBlur = 18; ctx.shadowColor = 'rgba(255,210,60,0.9)'; ctx.restore();
+      drawMic(l5MicX, l5MicY, spinAngle);
     } else {
-      // Mic held — small icon raised in player's forward hand
-      const mhx = l5PX + Math.cos(l5PAngle)*22, mhy = l5PY + Math.sin(l5PAngle)*22;
-      ctx.fillStyle = '#ffe060';
-      ctx.beginPath(); ctx.ellipse(mhx, mhy, 6, 3, l5PAngle, 0, TAU); ctx.fill();
+      // Mic held — small mic in player's forward hand
+      const mhx = l5PX + Math.cos(l5PAngle) * 22, mhy = l5PY + Math.sin(l5PAngle) * 22;
+      drawMic(mhx, mhy, l5PAngle, 0.75);
     }
 
     // Player (Miss Li)

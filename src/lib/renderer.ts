@@ -192,34 +192,33 @@ function drawMissLi(ctx: CanvasRenderingContext2D, x: number, y: number, frame: 
   // ── HAIR (back layer — behind everything) ──────────────────────────────
   ctx.save();
 
-  // Left side: large volume, flows past shoulders
+  // Ponytail — hangs behind left side of head, ends around shoulder
   ctx.fillStyle = C.hair;
   ctx.beginPath();
   ctx.moveTo(cx - 6, y + 2);
-  ctx.bezierCurveTo(cx - 22, y - 6, cx - 28, y + 8, cx - 26, y + 22);
-  ctx.bezierCurveTo(cx - 24, y + 36, cx - 20, y + 50, cx - 15, y + 58);
-  ctx.bezierCurveTo(cx - 10, y + 52, cx - 8, y + 36, cx - 10, y + 22);
-  ctx.bezierCurveTo(cx - 14, y + 10, cx - 8, y + 2, cx - 6, y + 2);
+  ctx.bezierCurveTo(cx - 18, y - 2, cx - 20, y + 10, cx - 18, y + 22);
+  ctx.bezierCurveTo(cx - 16, y + 30, cx - 13, y + 36, cx - 11, y + 38);
+  ctx.bezierCurveTo(cx - 9, y + 32, cx - 9, y + 20, cx - 11, y + 12);
+  ctx.bezierCurveTo(cx - 13, y + 4, cx - 6, y + 0, cx - 6, y + 2);
   ctx.fill();
 
-  // Left inner shadow for depth
+  // Shadow inside ponytail
   ctx.fillStyle = C.hairShadow;
   ctx.beginPath();
   ctx.moveTo(cx - 10, y + 8);
-  ctx.bezierCurveTo(cx - 20, y + 10, cx - 22, y + 24, cx - 18, y + 38);
-  ctx.bezierCurveTo(cx - 14, y + 50, cx - 12, y + 54, cx - 12, y + 54);
-  ctx.bezierCurveTo(cx - 10, y + 48, cx - 10, y + 34, cx - 12, y + 20);
-  ctx.bezierCurveTo(cx - 14, y + 10, cx - 10, y + 8, cx - 10, y + 8);
+  ctx.bezierCurveTo(cx - 17, y + 12, cx - 18, y + 22, cx - 15, y + 32);
+  ctx.bezierCurveTo(cx - 13, y + 36, cx - 12, y + 37, cx - 12, y + 37);
+  ctx.bezierCurveTo(cx - 11, y + 31, cx - 11, y + 20, cx - 13, y + 12);
+  ctx.bezierCurveTo(cx - 13, y + 8, cx - 10, y + 8, cx - 10, y + 8);
   ctx.fill();
 
-  // Right side: smaller, visible behind right cheek
+  // Small tuft behind right ear
   ctx.fillStyle = C.hairMid;
   ctx.beginPath();
-  ctx.moveTo(cx + 7, y + 2);
-  ctx.bezierCurveTo(cx + 18, y - 2, cx + 20, y + 10, cx + 18, y + 24);
-  ctx.bezierCurveTo(cx + 14, y + 38, cx + 11, y + 50, cx + 10, y + 56);
-  ctx.bezierCurveTo(cx + 6, y + 48, cx + 8, y + 34, cx + 10, y + 20);
-  ctx.bezierCurveTo(cx + 13, y + 8, cx + 9, y + 0, cx + 7, y + 2);
+  ctx.moveTo(cx + 7, y + 4);
+  ctx.bezierCurveTo(cx + 14, y + 2, cx + 15, y + 10, cx + 13, y + 18);
+  ctx.bezierCurveTo(cx + 11, y + 22, cx + 9, y + 20, cx + 9, y + 14);
+  ctx.bezierCurveTo(cx + 10, y + 8, cx + 9, y + 4, cx + 7, y + 4);
   ctx.fill();
 
   ctx.restore();
