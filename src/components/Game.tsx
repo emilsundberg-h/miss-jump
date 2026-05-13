@@ -14,26 +14,25 @@ type LevelId = 1 | 2 | 3 | 4 | 5;
 const VOL = { menu: 0.07 as number, play: 0.7 as number, dead: 0.07 as number };
 
 function useMusic() {
-  const audio = useRef<HTMLAudioElement | null>(null);
+  const audio  = useRef<HTMLAudioElement | null>(null);
   const target = useRef(VOL.menu);
-  const raf    = useRef(0);
+  const timer  = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fade = useCallback(() => {
-    const a = audio.current;
-    if (!a) return;
-    const diff = target.current - a.volume;
-    if (Math.abs(diff) < 0.005) { a.volume = target.current; return; }
-    a.volume = Math.max(0, Math.min(1, a.volume + diff * 0.06));
-    raf.current = requestAnimationFrame(fade);
-  }, []);
+  const stopFade = () => { if (timer.current) { clearInterval(timer.current); timer.current = null; } };
 
   const setVol = useCallback((v: number) => {
     target.current = v;
-    cancelAnimationFrame(raf.current);
-    raf.current = requestAnimationFrame(fade);
-  }, [fade]);
+    const a = audio.current;
+    if (!a) return;
+    stopFade();
+    // 100 ms interval (10 fps) — plenty smooth for audio, no RAF pressure on game loop
+    timer.current = setInterval(() => {
+      const diff = target.current - a.volume;
+      if (Math.abs(diff) < 0.01) { a.volume = target.current; stopFade(); return; }
+      a.volume = Math.max(0, Math.min(1, a.volume + diff * 0.18));
+    }, 100);
+  }, []);
 
-  // Start audio on first user interaction (browser autoplay policy)
   const start = useCallback(() => {
     if (audio.current) return;
     const a = new Audio("/bg-music.mp3");
@@ -45,23 +44,19 @@ function useMusic() {
   }, [setVol]);
 
   useEffect(() => {
-    // Pause when tab/app goes to background, resume when it comes back
     const onVisibility = () => {
       const a = audio.current;
       if (!a) return;
-      if (document.hidden) {
-        a.pause();
-      } else {
-        a.play().catch(() => {});
-      }
+      if (document.hidden) { a.pause(); }
+      else { a.play().catch(() => {}); }
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
-      cancelAnimationFrame(raf.current);
+      stopFade();
       audio.current?.pause();
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return { start, setVol };
 }
 
