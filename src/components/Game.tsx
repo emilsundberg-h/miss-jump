@@ -142,14 +142,14 @@ export default function Game() {
 
       {isPlaying && levelId && (
         <div style={{ position: "fixed", top: 18, left: 18, right: 18, display: "flex", justifyContent: "space-between", alignItems: "flex-start", pointerEvents: "none", zIndex: 5 }}>
-          <HudCard label="Strålkastare" value={String(score)} />
-          <HudCard label="Till scenen" progress={progress} />
+          <HudCard label="Spotlight" value={String(score)} />
+          <HudCard label="To the Stage" progress={progress} />
         </div>
       )}
 
       {tapHint && (
         <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", color: "rgba(255,255,255,0.7)", fontSize: 12, letterSpacing: "0.2em", textTransform: "uppercase", background: "rgba(20,14,26,0.4)", padding: "8px 16px", borderRadius: 99, backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", pointerEvents: "none", zIndex: 3 }}>
-          Tryck eller mellanslag för att hoppa · håll för högre hopp
+          Tap or press space to jump · hold for higher jump
         </div>
       )}
 
@@ -157,7 +157,7 @@ export default function Game() {
       <Overlay show={levelId === null}>
         <div style={{ maxWidth: 680, width: "100%", padding: "0 12px" }}>
           <div style={{ textAlign: "center", marginBottom: 24 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.28em", textTransform: "uppercase", color: "#b14a78", marginBottom: 8 }}>Välj bana</div>
+            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.28em", textTransform: "uppercase", color: "#b14a78", marginBottom: 8 }}>Choose Level</div>
             <h1 style={{ fontFamily: '"Playfair Display", serif', fontWeight: 900, fontStyle: "italic", fontSize: "clamp(36px,6vw,64px)", lineHeight: 0.92, margin: "0 0 0", color: "#f7efe2" }}>Miss Jump</h1>
           </div>
 
@@ -165,32 +165,23 @@ export default function Game() {
           <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 18, padding: "16px 20px", marginBottom: 18, display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
             <CharacterPreview custom={custom} />
             <div style={{ flex: 1, minWidth: 220 }}>
-              <PickerRow label="Hår">
+              <PickerRow label="Hair">
                 {HAIR_PRESETS.map(p => (
-                  <Swatch
-                    key={p.key}
-                    color={p.swatch}
-                    label={p.label}
+                  <Swatch key={p.key} color={p.swatch} label={p.label}
                     active={custom.hair === p.hair}
                     onClick={() => setCustom(c => ({ ...c, hair: p.hair, hairMid: p.hairMid, hairHi: p.hairHi }))}
                   />
                 ))}
               </PickerRow>
-              <PickerRow label="Längd">
-                <LengthToggle
-                  active={custom.hairLength === 'short'}
-                  onClick={() => setCustom(c => ({ ...c, hairLength: 'short' }))}
-                >Kort</LengthToggle>
-                <LengthToggle
-                  active={custom.hairLength === 'long'}
-                  onClick={() => setCustom(c => ({ ...c, hairLength: 'long' }))}
-                >Långt</LengthToggle>
+              <PickerRow label="Length">
+                <LengthToggle active={custom.hairLength === 'short'} onClick={() => setCustom(c => ({ ...c, hairLength: 'short' }))}>Short</LengthToggle>
+                <LengthToggle active={custom.hairLength === 'long'}  onClick={() => setCustom(c => ({ ...c, hairLength: 'long'  }))}>Long</LengthToggle>
               </PickerRow>
               <PickerRow label="Outfit">
-                <LengthToggle active={custom.outfit === 'dress'} onClick={() => setCustom(c => ({ ...c, outfit: 'dress' }))}>Klänning</LengthToggle>
-                <LengthToggle active={custom.outfit === 'top'}   onClick={() => setCustom(c => ({ ...c, outfit: 'top'   }))}>Topp</LengthToggle>
+                <LengthToggle active={custom.outfit === 'dress'} onClick={() => setCustom(c => ({ ...c, outfit: 'dress' }))}>Dress</LengthToggle>
+                <LengthToggle active={custom.outfit === 'top'}   onClick={() => setCustom(c => ({ ...c, outfit: 'top'   }))}>Top</LengthToggle>
               </PickerRow>
-              <PickerRow label={custom.outfit === 'top' ? 'Topp' : 'Klänning'}>
+              <PickerRow label={custom.outfit === 'top' ? 'Top colour' : 'Dress colour'}>
                 {DRESS_PRESETS.map(p => (
                   <Swatch key={p.key} color={p.swatch} label={p.label}
                     active={custom.dress === p.dress}
@@ -199,7 +190,7 @@ export default function Game() {
                 ))}
               </PickerRow>
               {custom.outfit === 'top' && (
-                <PickerRow label="Byxor">
+                <PickerRow label="Pants">
                   {PANTS_PRESETS.map(p => (
                     <Swatch key={p.key} color={p.swatch} label={p.label}
                       active={custom.pantsColor === p.color}
@@ -213,16 +204,16 @@ export default function Game() {
 
           {/* Level cards — 2×2 grid */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, maxWidth: 560 }}>
-            <LevelCard num={1} title="Skogsturné" description="Spring på mossiga plattor, hoppa över taggar och avgrunder." difficulty={2} mechanic="🏃 Hoppa"
+            <LevelCard num={1} title="Forest Tour" description="Run on mossy platforms, jump over spikes and gaps." difficulty={2} mechanic="🏃 Jump"
               palette={{ bg: "linear-gradient(150deg,#1e2e14,#101e0e)", accent: "#85b84a", dot: "#a0c862", badge: "#3a6020" }}
               onClick={() => setLevelId(1)} />
-            <LevelCard num={2} title="Molnturné" description="Klättra på rosa moln och undvik blixtar högt uppe i skyn." difficulty={3} mechanic="☁️ Hoppa"
+            <LevelCard num={2} title="Cloud Tour" description="Jump between pink clouds and dodge lightning bolts." difficulty={3} mechanic="☁️ Jump"
               palette={{ bg: "linear-gradient(150deg,#5a2050,#3a1038)", accent: "#ff9ec0", dot: "#ffd86b", badge: "#a04070" }}
               onClick={() => setLevelId(2)} />
-            <LevelCard num={3} title="Miss Flappy" description="Tryck för att flyga uppåt, passera genom gluggar i molnen." difficulty={2} mechanic="🪶 Tryck = flyg"
+            <LevelCard num={3} title="Miss Flappy" description="Tap to fly up and pass through gaps in the clouds." difficulty={2} mechanic="🪶 Tap = fly"
               palette={{ bg: "linear-gradient(150deg,#204860,#102030)", accent: "#ffc5d2", dot: "#fff6fa", badge: "#904060" }}
               onClick={() => setLevelId(3)} />
-            <LevelCard num={4} title="Fritt Fall" description="Faller nedåt — tryck vänster/höger sida för att svänga." difficulty={4} mechanic="↙↘ Sväng"
+            <LevelCard num={4} title="Free Fall" description="Clouds end — fall down and steer left or right to survive." difficulty={4} mechanic="↙↘ Steer"
               palette={{ bg: "linear-gradient(150deg,#0a1030,#050818)", accent: "#b8d0f0", dot: "#ffd9e6", badge: "#204080" }}
               onClick={() => setLevelId(4)} />
           </div>
@@ -232,18 +223,18 @@ export default function Game() {
       {/* ── In-game start ── */}
       <Overlay show={!!levelId && state === "start"}>
         <TitleCard>
-          <Eyebrow>{["", "Skogsturné · Akt 1","Molnturné · Akt 2","Miss Flappy · Akt 3","Fritt Fall · Akt 4"][levelId!]}</Eyebrow>
+          <Eyebrow>{["","Forest Tour · Act 1","Cloud Tour · Act 2","Miss Flappy · Act 3","Free Fall · Act 4"][levelId!]}</Eyebrow>
           <BigTitle>Miss Jump</BigTitle>
           <Subtitle>{levelId === 1
-            ? "Hoppa över taggar och avgrunder. Nå scenen vid vattenfallet."
+            ? "Jump over spikes and gaps. Reach the stage by the waterfall."
             : levelId === 2
-            ? "Hoppa mellan rosa moln. Akta blixtarna. Nå scenen bland stjärnorna."
+            ? "Hop between pink clouds. Watch out for lightning. Reach the sky stage."
             : levelId === 3
-            ? "Tryck för att flyga uppåt. Passa genom gluggar i molnen. Nå scenen i skyn."
-            : "Du faller! Tryck vänster eller höger halva av skärmen för att svänga. Navigera ned till scenen."
+            ? "Tap to fly up. Pass through gaps in the clouds. Reach the stage."
+            : "Run until the clouds end — then steer left or right as you fall. Reach the stage below."
           }</Subtitle>
-          <Cta onClick={pressJump}>Starta showen <Key>SPACE</Key></Cta>
-          <BackLink onClick={() => setLevelId(null)}>← Byt bana</BackLink>
+          <Cta onClick={pressJump}>Start the Show <Key>SPACE</Key></Cta>
+          <BackLink onClick={() => setLevelId(null)}>← Change Level</BackLink>
         </TitleCard>
       </Overlay>
 
@@ -251,15 +242,15 @@ export default function Game() {
       <Overlay show={!!levelId && state === "lose"} onClick={pressJump}>
         <TitleCard>
           <div style={{ fontSize: 44, marginBottom: 6 }}>🎤</div>
-          <Eyebrow>Tappade taktkänslan</Eyebrow>
-          <BigTitle style={{ fontSize: "clamp(36px,5vw,60px)" }}>Tagning {tries + 1}?</BigTitle>
-          <Subtitle>Publiken väntar fortfarande. Ta sats igen.</Subtitle>
+          <Eyebrow>Lost the Beat</Eyebrow>
+          <BigTitle style={{ fontSize: "clamp(36px,5vw,60px)" }}>Take Two?</BigTitle>
+          <Subtitle>The audience is still waiting. Give it another go.</Subtitle>
           <div style={{ margin: "4px 0 18px" }}>
-            <Stat label="Försök" value={String(tries)} />
+            <Stat label="Attempts" value={String(tries)} />
           </div>
-          <Cta onClick={pressJump}>Försök igen <Key>SPACE</Key></Cta>
+          <Cta onClick={pressJump}>Try Again <Key>SPACE</Key></Cta>
           <div onClick={e => e.stopPropagation()}>
-            <BackLink onClick={() => setLevelId(null)}>← Byt bana</BackLink>
+            <BackLink onClick={() => setLevelId(null)}>← Change Level</BackLink>
           </div>
         </TitleCard>
       </Overlay>
@@ -268,16 +259,16 @@ export default function Game() {
       <Overlay show={!!levelId && state === "win"}>
         <TitleCard>
           <Eyebrow>Encore</Eyebrow>
-          <BigTitle>Scenen är din.</BigTitle>
-          <Subtitle>Strålkastaren tänds. Publiken håller andan.</Subtitle>
+          <BigTitle>The Stage is Yours.</BigTitle>
+          <Subtitle>The spotlight turns on. The audience holds its breath.</Subtitle>
           {winData && (
             <div style={{ display: "flex", gap: 28, justifyContent: "center", margin: "18px 0 4px" }}>
-              <Stat label="Strålkastare" value={String(winData.score)} />
-              <Stat label="Försök" value={String(winData.tries)} />
+              <Stat label="Spotlight" value={String(winData.score)} />
+              <Stat label="Attempts" value={String(winData.tries)} />
             </div>
           )}
-          <Cta onClick={pressJump} style={{ marginTop: 18 }}>Spela igen <Key>SPACE</Key></Cta>
-          <BackLink onClick={() => setLevelId(null)}>← Byt bana / Anpassa</BackLink>
+          <Cta onClick={pressJump} style={{ marginTop: 18 }}>Play Again <Key>SPACE</Key></Cta>
+          <BackLink onClick={() => setLevelId(null)}>← Change Level / Customize</BackLink>
         </TitleCard>
       </Overlay>
     </div>
@@ -324,9 +315,9 @@ function CharacterPreview({ custom }: { custom: CharCustom }) {
 
 function PickerRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: 10 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", marginBottom: 6 }}>{label}</div>
-      <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>{children}</div>
+    <div style={{ marginBottom: 9, display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.4)", minWidth: 56, flexShrink: 0 }}>{label}</div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>{children}</div>
     </div>
   );
 }
@@ -383,7 +374,7 @@ function LevelCard({ num, title, description, difficulty, mechanic, palette, onC
       boxShadow: "0 10px 32px rgba(0,0,0,0.45)", outline: "none",
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-        <span style={{ background: palette.badge, color: "#fff", fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", padding: "2px 8px", borderRadius: 99 }}>Bana {num}</span>
+        <span style={{ background: palette.badge, color: "#fff", fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", padding: "2px 8px", borderRadius: 99 }}>Level {num}</span>
         <span style={{ fontSize: 11, letterSpacing: 1.5 }}>
           {[0,1,2,3].map(i => <span key={i} style={{ color: i < difficulty ? palette.dot : "rgba(255,255,255,0.18)" }}>★</span>)}
         </span>

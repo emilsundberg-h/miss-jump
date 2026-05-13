@@ -37,13 +37,13 @@ const FALL_OBS_DEFS: { wy: number; gapFrac: number; gapWFrac: number }[] = (() =
   const list: { wy: number; gapFrac: number; gapWFrac: number }[] = [];
   let s = 9876543;
   const r = () => { s = (s * 1664525 + 1013904223) >>> 0; return (s >>> 0) / 4294967296; };
-  // First obstacle at y=900 — player needs time to see it and aim
-  // Gaps centre-biased (0.25–0.65) and width 28–40% of screen
-  for (let y = 900; y < 10500; y += 280 + r() * 140) {
-    // Bias gap toward center to force meaningful lateral movement
-    const centre = 0.25 + r() * 0.50;  // 0.25–0.75
-    const hw = 0.14 + r() * 0.08;      // half-width: 14–22%
-    list.push({ wy: y, gapFrac: Math.max(0.05, centre - hw), gapWFrac: hw * 2 });
+  // Gaps strictly left OR right — never in the centre, so holding middle is never safe.
+  // Width 22–30% of screen.  Spacing tightens from 320 → 220 px over the level.
+  for (let y = 900; y < 10500; y += Math.max(220, 320 - y / 60)) {
+    const left = r() < 0.5;
+    const centre = left ? 0.10 + r() * 0.22 : 0.68 + r() * 0.22; // 0.10–0.32 or 0.68–0.90
+    const hw = 0.11 + r() * 0.04;   // half-width 11–15% (narrow gap)
+    list.push({ wy: y, gapFrac: Math.max(0.02, Math.min(0.75, centre - hw)), gapWFrac: hw * 2 });
   }
   return list;
 })();
@@ -1148,7 +1148,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
       ctx.fillStyle = '#fff0f6';
       ctx.font = 'bold 15px "Inter", sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('Molnen tar slut…', W/2, H * 0.14);
+      ctx.fillText('Clouds running out…', W/2, H * 0.14);
       ctx.restore();
     }
 
@@ -1241,11 +1241,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (gstate === 'play') {
       if (fallHoldL > 0) { ctx.fillStyle = 'rgba(255,180,210,0.10)'; ctx.fillRect(0, 0, W/2, H); }
       if (fallHoldR > 0) { ctx.fillStyle = 'rgba(255,180,210,0.10)'; ctx.fillRect(W/2, 0, W/2, H); }
-      // Direction arrows hint (first 5 seconds)
-      if (fallWorldY < 1500) {
-        ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = 'bold 32px sans-serif';
-        ctx.textAlign = 'center'; ctx.fillText('◀', W * 0.18, H * 0.5); ctx.fillText('▶', W * 0.82, H * 0.5);
-      }
+      // (direction arrow hints removed)
     }
   }
 
