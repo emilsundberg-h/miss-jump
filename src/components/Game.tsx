@@ -8,7 +8,7 @@ import {
   drawPreviewChar,
 } from "@/lib/game";
 
-type LevelId = 1 | 2 | 3 | 4;
+type LevelId = 1 | 2 | 3 | 4 | 5;
 
 // Volume targets per game state
 const VOL = { menu: 0.07 as number, play: 0.7 as number, dead: 0.07 as number };
@@ -153,6 +153,11 @@ export default function Game() {
         </div>
       )}
 
+      {/* ── Level 5 virtual joystick ── */}
+      {isPlaying && levelId === 5 && (
+        <VirtualJoystick onMove={(dx, dy) => controlRef.current?.setJoystick(dx, dy)} />
+      )}
+
       {/* ── Level selection ── */}
       <Overlay show={levelId === null}>
         <div style={{ maxWidth: 680, width: "100%", padding: "0 12px" }}>
@@ -216,6 +221,9 @@ export default function Game() {
             <LevelCard num={4} title="Free Fall" description="Clouds end — fall down and steer left or right to survive." difficulty={4} mechanic="↙↘ Steer"
               palette={{ bg: "linear-gradient(150deg,#0a1030,#050818)", accent: "#b8d0f0", dot: "#ffd9e6", badge: "#204080" }}
               onClick={() => setLevelId(4)} />
+            <LevelCard num={5} title="Mic Drop" description="Top-down arena. Throw your mic at rival artists before they reach you." difficulty={3} mechanic="🎤 Throw mic"
+              palette={{ bg: "linear-gradient(150deg,#2a1810,#160c06)", accent: "#ffd86b", dot: "#ff9ec0", badge: "#8a3a10" }}
+              onClick={() => setLevelId(5)} />
           </div>
         </div>
       </Overlay>
@@ -223,7 +231,7 @@ export default function Game() {
       {/* ── In-game start ── */}
       <Overlay show={!!levelId && state === "start"}>
         <TitleCard>
-          <Eyebrow>{["","Forest Tour · Act 1","Cloud Tour · Act 2","Miss Flappy · Act 3","Free Fall · Act 4"][levelId!]}</Eyebrow>
+          <Eyebrow>{["","Forest Tour · Act 1","Cloud Tour · Act 2","Miss Flappy · Act 3","Free Fall · Act 4","Mic Drop · Act 5"][levelId!]}</Eyebrow>
           <BigTitle>Miss Jump</BigTitle>
           <Subtitle>{levelId === 1
             ? "Jump over spikes and gaps. Reach the stage by the waterfall."
@@ -231,7 +239,9 @@ export default function Game() {
             ? "Hop between pink clouds. Watch out for lightning. Reach the sky stage."
             : levelId === 3
             ? "Tap to fly up. Pass through gaps in the clouds. Reach the stage."
-            : "Run until the clouds end — then steer left or right as you fall. Reach the stage below."
+            : levelId === 4
+            ? "Run until the clouds end — then steer left or right as you fall. Reach the stage below."
+            : "Top-down arena. Use the joystick to move. Tap the stage to throw your mic. Hit all 40 artists!"
           }</Subtitle>
           <Cta onClick={pressJump}>Start the Show <Key>SPACE</Key></Cta>
           <BackLink onClick={() => setLevelId(null)}>← Change Level</BackLink>
@@ -309,6 +319,85 @@ function CharacterPreview({ custom }: { custom: CharCustom }) {
 
   // Render initial canvas at W×H; the effect will resize it correctly
   return <canvas ref={ref} width={W} height={H} style={{ flexShrink: 0, display: "block" }} />;
+}
+
+// ── Virtual joystick (Level 5) ───────────────────────────────────────────────
+
+function VirtualJoystick({ onMove }: { onMove: (dx: number, dy: number) => void }) {
+  const BASE = 72, THUMB = 32, MAX = (BASE - THUMB) / 2;
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const rootRef = useRef<HTMLDivElement>(null);
+  const tid = useRef<number | null>(null);
+
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const rect = () => el.getBoundingClientRect();
+
+    const onStart = (e: TouchEvent) => {
+      if (tid.current !== null) return;
+      const t = e.changedTouches[0];
+      tid.current = t.identifier;
+      move(t.clientX, t.clientY, rect());
+    };
+    const onMove2 = (e: TouchEvent) => {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === tid.current) {
+          move(e.changedTouches[i].clientX, e.changedTouches[i].clientY, rect());
+        }
+      }
+    };
+    const onEnd = (e: TouchEvent) => {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === tid.current) {
+          tid.current = null; setPos({ x: 0, y: 0 }); onMove(0, 0);
+        }
+      }
+    };
+    const move = (cx: number, cy: number, r: DOMRect) => {
+      const cx2 = r.left + r.width / 2, cy2 = r.top + r.height / 2;
+      let dx = cx - cx2, dy = cy - cy2;
+      const len = Math.hypot(dx, dy);
+      if (len > MAX) { dx = (dx / len) * MAX; dy = (dy / len) * MAX; }
+      setPos({ x: dx, y: dy });
+      onMove(dx / MAX, dy / MAX);
+    };
+
+    el.addEventListener("touchstart",  onStart,  { passive: true });
+    el.addEventListener("touchmove",   onMove2,  { passive: true });
+    el.addEventListener("touchend",    onEnd,    { passive: true });
+    el.addEventListener("touchcancel", onEnd,    { passive: true });
+    return () => {
+      el.removeEventListener("touchstart",  onStart);
+      el.removeEventListener("touchmove",   onMove2);
+      el.removeEventListener("touchend",    onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
+  }, [onMove]);
+
+  return (
+    <div ref={rootRef} style={{
+      position: "fixed", bottom: 24, left: 24,
+      width: BASE * 1.8, height: BASE * 1.8,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 20, touchAction: "none", userSelect: "none",
+    }}>
+      {/* Base ring */}
+      <div style={{
+        position: "absolute", width: BASE, height: BASE, borderRadius: "50%",
+        background: "rgba(255,255,255,0.10)", border: "2px solid rgba(255,255,255,0.25)",
+      }} />
+      {/* Thumb */}
+      <div style={{
+        position: "absolute",
+        width: THUMB, height: THUMB, borderRadius: "50%",
+        background: "rgba(255,255,255,0.45)", border: "2px solid rgba(255,255,255,0.7)",
+        transform: `translate(${pos.x}px, ${pos.y}px)`,
+        transition: tid.current === null ? "transform 0.1s" : "none",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+      }} />
+    </div>
+  );
 }
 
 // ── Customisation UI pieces ──────────────────────────────────────────────────

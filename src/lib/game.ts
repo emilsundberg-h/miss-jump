@@ -14,8 +14,19 @@ export interface GameControls {
   releaseJump: () => void;
   pointerDown: (x: number, y: number) => void;
   pointerUp:   (x: number, y: number) => void;
+  setJoystick: (dx: number, dy: number) => void;
   destroy: () => void;
 }
+
+// ── Level 5: Boomerang Fu / mic-throw constants ──────────────────────────────
+const L5_TOTAL        = 40;
+const L5_P_SPEED      = 190;
+const L5_MIC_SPEED    = 480;
+const L5_MIC_RETURN   = 380;
+const L5_MIC_RANGE    = 280;
+const L5_ENEMY_COLORS = ['#ff9ec0','#ffd86b','#b8eecc','#d4a8ff','#ffc898','#a8e8f0','#f0c4d8','#e8e070'];
+interface L5Enemy { x:number; y:number; vx:number; vy:number; color:string; id:number; alive:boolean; hitT:number; angle:number }
+interface L5Spawn { wx:number; wy:number; t:number; color:string } // pending spawns (with preview flash)
 
 // ── Level 3: Flappy obstacles (gapFrac = gapTop/H, H-independent) ──────────
 const FLAP_OBS_DEFS: { wx: number; gapFrac: number }[] = (() => {
@@ -561,7 +572,7 @@ function renderMissLi(
 }
 
 // ===== Main factory =====
-export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId: 1|2|3|4 = 1, custom: CharCustom = DEFAULT_CUSTOM): GameControls {
+export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId: 1|2|3|4|5 = 1, custom: CharCustom = DEFAULT_CUSTOM): GameControls {
   const ctx = canvas.getContext('2d')!;
   let DPR = 1, W = 0, H = 0;
 
@@ -620,6 +631,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   function startGame() {
     if (levelId === 3) { startFlappy(); return; }
     if (levelId === 4) { startFall4(); return; }
+    if (levelId === 5) { startLevel5(); return; }
     gstate = 'play'; score = 0;
     player.x = 120; player.y = 0; player.vx = MOVE_SPEED; player.vy = 0;
     player.onGround = true; player.jumps = 0; player.alive = true;
@@ -653,6 +665,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   function update(dt: number) {
     if (levelId === 3) { if (gstate === 'play') updateFlappy(dt); return; }
     if (levelId === 4 && fall4Phase === 'fall') { if (gstate === 'play') updateFalling(dt); return; }
+    if (levelId === 5) { if (gstate === 'play') updateLevel5(dt); return; }
     // Level 4 runner phase falls through to the normal platform runner below
     if (gstate === 'play') {
       // Speed ramps up progressively with distance (1× → 2× over the level)
@@ -760,6 +773,316 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
       life: 0.6, color: ['#ffe8a8','#ffd470','#fff4cc'][Math.floor(Math.random()*3)],
       size: 3 + Math.random() * 3,
     });
+  }
+
+  // ── Level 5: Mic Throw arena ────────────────────────────────────────────────
+  let l5PX = 0, l5PY = 0;           // player world pos
+  let l5PVX = 0, l5PVY = 0;
+  let l5PAngle = -Math.PI / 2;      // facing up initially
+  let l5JDX = 0, l5JDY = 0;         // joystick input (-1..1)
+  let l5MicX = 0, l5MicY = 0;
+  let l5MicVX = 0, l5MicVY = 0;
+  let l5MicOut = false;
+  let l5MicPhase: 'flying' | 'returning' = 'flying';
+  let l5MicDist = 0;
+  let l5Enemies: L5Enemy[] = [];
+  let l5Spawns: L5Spawn[] = [];     // upcoming spawn flashes
+  let l5SpawnTimer = 0;
+  let l5SpawnCount = 0;
+  let l5ElimCount = 0;
+  let l5WinPhase = false;
+  let l5WinT = 0;
+  let l5EnemyId = 0;
+
+  const l5SW = () => W * 0.88;   // stage width
+  const l5SH = () => H * 0.80;   // stage height
+  const l5SX = () => (W - l5SW()) / 2;
+  const l5SY = () => (H - l5SH()) / 2;
+  const l5MicX2 = () => W / 2;   // mic stand position
+  const l5MicY2 = () => l5SY() + 70;
+
+  function spawnInterval() {
+    if (l5SpawnCount < 10) return 4.0;
+    if (l5SpawnCount < 25) return 3.0;
+    if (l5SpawnCount < 35) return 2.2;
+    return 1.6;
+  }
+  function enemySpeed() {
+    if (l5SpawnCount < 10) return 68;
+    if (l5SpawnCount < 25) return 90;
+    if (l5SpawnCount < 35) return 115;
+    return 140;
+  }
+
+  function startLevel5() {
+    l5PX = W / 2; l5PY = H * 0.65;
+    l5PVX = 0; l5PVY = 0; l5PAngle = -Math.PI / 2;
+    l5JDX = 0; l5JDY = 0;
+    l5MicOut = false; l5MicDist = 0;
+    l5Enemies = []; l5Spawns = [];
+    l5SpawnTimer = 1.5; l5SpawnCount = 0; l5ElimCount = 0;
+    l5WinPhase = false; l5WinT = 0; l5EnemyId = 0;
+    gstate = 'play'; score = 0;
+    cb.onStateChange('play'); cb.onScore(0); cb.onProgress(0);
+  }
+
+  function throwMic(tx: number, ty: number) {
+    if (l5MicOut || l5WinPhase) return;
+    const dx = tx - l5PX, dy = ty - l5PY;
+    const d = Math.hypot(dx, dy) || 1;
+    l5MicX = l5PX; l5MicY = l5PY;
+    l5MicVX = (dx / d) * L5_MIC_SPEED;
+    l5MicVY = (dy / d) * L5_MIC_SPEED;
+    l5MicDist = 0;
+    l5MicOut = true; l5MicPhase = 'flying';
+    l5PAngle = Math.atan2(dy, dx);
+  }
+
+  function updateLevel5(dt: number) {
+    const sx = l5SX(), sy = l5SY(), sw = l5SW(), sh = l5SH();
+
+    // Win walk-to-stand animation
+    if (l5WinPhase) {
+      l5WinT += dt;
+      const tx = l5MicX2(), ty = l5MicY2() + 40;
+      const dx = tx - l5PX, dy = ty - l5PY, d = Math.hypot(dx, dy);
+      if (d > 6) {
+        l5PX += (dx / d) * 120 * dt; l5PY += (dy / d) * 120 * dt;
+        l5PAngle = Math.atan2(dy, dx);
+      }
+      if (l5WinT > 2.4) winGame();
+      // Celebration particles
+      if (Math.random() < 0.4) particles.push({
+        x: l5PX + (Math.random()-0.5)*60, y: l5PY + (Math.random()-0.5)*60,
+        vx: (Math.random()-0.5)*200, vy: -Math.random()*200-60,
+        life: 1.0, color: L5_ENEMY_COLORS[Math.floor(Math.random()*L5_ENEMY_COLORS.length)], size: 4+Math.random()*5,
+      });
+      return;
+    }
+
+    // Player movement (joystick)
+    const jLen = Math.hypot(l5JDX, l5JDY);
+    if (jLen > 0.05) {
+      l5PVX = (l5JDX / Math.max(1, jLen)) * L5_P_SPEED;
+      l5PVY = (l5JDY / Math.max(1, jLen)) * L5_P_SPEED;
+      l5PAngle = Math.atan2(l5JDY, l5JDX);
+    } else {
+      l5PVX *= 0.8; l5PVY *= 0.8;
+    }
+    l5PX = Math.max(sx + 22, Math.min(sx + sw - 22, l5PX + l5PVX * dt));
+    l5PY = Math.max(sy + 22, Math.min(sy + sh - 22, l5PY + l5PVY * dt));
+
+    // Mic physics
+    if (l5MicOut) {
+      if (l5MicPhase === 'flying') {
+        l5MicX += l5MicVX * dt; l5MicY += l5MicVY * dt;
+        l5MicDist += Math.hypot(l5MicVX, l5MicVY) * dt;
+        if (l5MicDist >= L5_MIC_RANGE) l5MicPhase = 'returning';
+      } else {
+        const rdx = l5PX - l5MicX, rdy = l5PY - l5MicY;
+        const rd = Math.hypot(rdx, rdy) || 1;
+        if (rd < 18) { l5MicOut = false; }
+        else {
+          l5MicVX = (rdx / rd) * L5_MIC_RETURN;
+          l5MicVY = (rdy / rd) * L5_MIC_RETURN;
+          l5MicX += l5MicVX * dt; l5MicY += l5MicVY * dt;
+        }
+      }
+      // Mic-enemy collision
+      for (const e of l5Enemies) {
+        if (!e.alive) continue;
+        if (Math.hypot(l5MicX - e.x, l5MicY - e.y) < 26) {
+          e.alive = false; e.hitT = 0;
+          l5ElimCount++;
+          cb.onScore(l5ElimCount);
+          cb.onProgress(l5ElimCount / L5_TOTAL);
+          for (let i = 0; i < 12; i++) particles.push({
+            x: e.x, y: e.y,
+            vx: (Math.random()-0.5)*280, vy: (Math.random()-0.5)*280,
+            life: 0.7, color: e.color, size: 5+Math.random()*5,
+          });
+          if (l5ElimCount >= L5_TOTAL) { l5WinPhase = true; l5WinT = 0; }
+          // Mic bounces back immediately after hit
+          l5MicPhase = 'returning';
+        }
+      }
+    }
+
+    // Enemy movement & collision with player
+    for (const e of l5Enemies) {
+      if (!e.alive) { e.hitT += dt; continue; }
+      const dx = l5PX - e.x, dy = l5PY - e.y, d = Math.hypot(dx, dy) || 1;
+      e.vx += (dx / d) * enemySpeed() * dt;
+      e.vy += (dy / d) * enemySpeed() * dt;
+      const spd = Math.hypot(e.vx, e.vy);
+      const maxSpd = enemySpeed();
+      if (spd > maxSpd) { e.vx = (e.vx/spd)*maxSpd; e.vy = (e.vy/spd)*maxSpd; }
+      e.x += e.vx * dt; e.y += e.vy * dt;
+      e.angle = Math.atan2(e.vy, e.vx);
+      // Stage bounds
+      e.x = Math.max(sx + 15, Math.min(sx + sw - 15, e.x));
+      e.y = Math.max(sy + 15, Math.min(sy + sh - 15, e.y));
+      // Reached player?
+      if (d < 24) { loseGame(); return; }
+    }
+
+    // Spawn logic
+    if (l5SpawnCount < L5_TOTAL) {
+      l5SpawnTimer -= dt;
+      if (l5SpawnTimer <= 0) {
+        l5SpawnTimer = spawnInterval();
+        // Create spawn flash then enemy
+        const side = Math.floor(Math.random() * 4);
+        let wx = 0, wy = 0;
+        if (side === 0) { wx = sx + Math.random()*sw; wy = sy + 12; }
+        else if (side === 1) { wx = sx + Math.random()*sw; wy = sy + sh - 12; }
+        else if (side === 2) { wx = sx + 12; wy = sy + Math.random()*sh; }
+        else                 { wx = sx + sw - 12; wy = sy + Math.random()*sh; }
+        const col = L5_ENEMY_COLORS[l5SpawnCount % L5_ENEMY_COLORS.length];
+        l5Spawns.push({ wx, wy, t: 0.9, color: col });
+        l5SpawnCount++;
+      }
+    }
+
+    // Spawn flashes → enemies
+    for (let i = l5Spawns.length - 1; i >= 0; i--) {
+      l5Spawns[i].t -= dt;
+      if (l5Spawns[i].t <= 0) {
+        const s = l5Spawns[i];
+        l5Enemies.push({ x: s.wx, y: s.wy, vx: 0, vy: 0, color: s.color, id: l5EnemyId++, alive: true, hitT: 0, angle: 0 });
+        l5Spawns.splice(i, 1);
+      }
+    }
+  }
+
+  function drawLevel5() {
+    const sx = l5SX(), sy = l5SY(), sw = l5SW(), sh = l5SH();
+    // Background
+    ctx.fillStyle = '#0a0810'; ctx.fillRect(0, 0, W, H);
+    // Audience silhouettes at edges
+    ctx.fillStyle = '#1a1220';
+    ctx.fillRect(0, 0, W, sy); ctx.fillRect(0, sy+sh, W, H-sy-sh);
+    ctx.fillRect(0, sy, sx, sh); ctx.fillRect(sx+sw, sy, W-sx-sw, sh);
+    // Stage floor — wooden planks (top-down)
+    const stageGrad = ctx.createLinearGradient(sx, sy, sx, sy+sh);
+    stageGrad.addColorStop(0, '#4a3020'); stageGrad.addColorStop(1, '#362418');
+    ctx.fillStyle = stageGrad; ctx.fillRect(sx, sy, sw, sh);
+    // Plank lines
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 2;
+    for (let py2 = sy + 40; py2 < sy + sh; py2 += 40) {
+      ctx.beginPath(); ctx.moveTo(sx, py2); ctx.lineTo(sx+sw, py2); ctx.stroke();
+    }
+    // Wood grain
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.lineWidth = 1;
+    for (let py2 = sy + 20; py2 < sy + sh; py2 += 40) {
+      ctx.beginPath(); ctx.moveTo(sx, py2); ctx.lineTo(sx+sw, py2); ctx.stroke();
+    }
+    // Stage edge highlight
+    ctx.strokeStyle = '#6a4828'; ctx.lineWidth = 3;
+    ctx.strokeRect(sx, sy, sw, sh);
+    // Spotlights on stage
+    [[W*0.25, sy+sh*0.3],[W*0.5, sy+sh*0.5],[W*0.75, sy+sh*0.3]].forEach(([lx,ly]) => {
+      const lg = ctx.createRadialGradient(lx, ly, 0, lx, ly, 120);
+      lg.addColorStop(0, 'rgba(255,240,200,0.12)'); lg.addColorStop(1, 'rgba(255,240,200,0)');
+      ctx.fillStyle = lg; ctx.fillRect(lx-130, ly-130, 260, 260);
+    });
+
+    // Mic stand (top-down: small oval + pole)
+    const msx = l5MicX2(), msy = l5MicY2();
+    ctx.fillStyle = '#1a1118';
+    ctx.beginPath(); ctx.ellipse(msx, msy+6, 18, 6, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#3a2848'; ctx.fillRect(msx-2, msy-30, 4, 36);
+    ctx.fillStyle = '#1f1a28';
+    ctx.beginPath(); ctx.ellipse(msx, msy-34, 7, 5, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#5a5468';
+    ctx.beginPath(); ctx.ellipse(msx-2, msy-36, 3, 3, 0, 0, TAU); ctx.fill();
+
+    // Spawn flashes
+    for (const s of l5Spawns) {
+      const a = Math.min(1, (0.9 - s.t) * 3) * Math.abs(Math.sin(s.t * 15));
+      ctx.save(); ctx.globalAlpha = a;
+      ctx.fillStyle = s.color;
+      ctx.beginPath(); ctx.arc(s.wx, s.wy, 16, 0, TAU); ctx.fill();
+      ctx.restore();
+    }
+
+    // Enemies
+    for (const e of l5Enemies) {
+      if (!e.alive) {
+        const a = Math.max(0, 1 - e.hitT * 3);
+        ctx.save(); ctx.globalAlpha = a;
+        ctx.fillStyle = e.color;
+        ctx.beginPath(); ctx.ellipse(e.x, e.y, 16, 11, e.angle, 0, TAU); ctx.fill();
+        ctx.restore();
+        continue;
+      }
+      // Shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.beginPath(); ctx.ellipse(e.x+3, e.y+3, 16, 11, e.angle, 0, TAU); ctx.fill();
+      // Body
+      ctx.fillStyle = e.color;
+      ctx.beginPath(); ctx.ellipse(e.x, e.y, 16, 11, e.angle, 0, TAU); ctx.fill();
+      // Head
+      ctx.fillStyle = '#f4d2b8';
+      const hx2 = e.x + Math.cos(e.angle)*8, hy2 = e.y + Math.sin(e.angle)*8;
+      ctx.beginPath(); ctx.arc(hx2, hy2, 7, 0, TAU); ctx.fill();
+      // Eyes
+      ctx.fillStyle = '#1a1320';
+      const ex2 = hx2 + Math.cos(e.angle+0.5)*3, ey2 = hy2 + Math.sin(e.angle+0.5)*3;
+      ctx.beginPath(); ctx.arc(ex2, ey2, 1.5, 0, TAU); ctx.fill();
+    }
+
+    // Mic (flying)
+    if (l5MicOut) {
+      const trail = l5MicPhase === 'flying' ? 0.6 : 0.35;
+      ctx.save();
+      ctx.shadowBlur = 12; ctx.shadowColor = '#ffd070';
+      ctx.fillStyle = '#ffe060';
+      ctx.translate(l5MicX, l5MicY);
+      ctx.rotate(Math.atan2(l5MicVY, l5MicVX));
+      ctx.beginPath(); ctx.ellipse(0, 0, 10, 5, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#8a6020'; ctx.fillRect(-2, 5, 4, 10);
+      ctx.restore();
+      // Trail
+      ctx.fillStyle = `rgba(255,220,80,${trail})`;
+      ctx.beginPath(); ctx.arc(l5MicX - l5MicVX*0.04, l5MicY - l5MicVY*0.04, 4, 0, TAU); ctx.fill();
+    } else {
+      // Mic held by player — small icon near them
+      ctx.fillStyle = '#ffe060';
+      ctx.beginPath(); ctx.ellipse(l5PX + Math.cos(l5PAngle)*20, l5PY + Math.sin(l5PAngle)*20, 6, 3, l5PAngle, 0, TAU); ctx.fill();
+    }
+
+    // Player
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath(); ctx.ellipse(l5PX+3, l5PY+3, 18, 13, l5PAngle, 0, TAU); ctx.fill();
+    ctx.fillStyle = custom.dress;
+    ctx.beginPath(); ctx.ellipse(l5PX, l5PY, 18, 13, l5PAngle, 0, TAU); ctx.fill();
+    ctx.fillStyle = custom.hair;
+    const phx = l5PX + Math.cos(l5PAngle)*10, phy = l5PY + Math.sin(l5PAngle)*10;
+    ctx.beginPath(); ctx.arc(phx, phy, 12, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#f7d8be';
+    ctx.beginPath(); ctx.arc(phx, phy, 8, 0, TAU); ctx.fill();
+    // Direction dot
+    ctx.fillStyle = '#c0394a';
+    ctx.beginPath(); ctx.arc(phx + Math.cos(l5PAngle)*5, phy + Math.sin(l5PAngle)*5, 3, 0, TAU); ctx.fill();
+
+    // Particles
+    drawParticles();
+
+    // HUD
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.beginPath(); ctx.roundRect(sx, 10, 200, 32, 8); ctx.fill();
+    ctx.fillStyle = '#f7efe2'; ctx.font = 'bold 14px "Inter", sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText(`Eliminated: ${l5ElimCount} / ${L5_TOTAL}`, sx + 12, 31);
+
+    // Remaining alive count
+    const alive = l5Enemies.filter(e => e.alive).length;
+    if (alive > 0) {
+      ctx.fillStyle = 'rgba(200,50,80,0.7)';
+      ctx.beginPath(); ctx.roundRect(sx + sw - 130, 10, 120, 32, 8); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'right';
+      ctx.fillText(`On stage: ${alive}`, sx + sw - 12, 31);
+    }
   }
 
   // ── Level 3 (Flappy) state & logic ────────────────────────────────────────
@@ -1282,6 +1605,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (levelId === 3) { drawFlappy(); drawVignette(); return; }
     if (levelId === 4 && fall4Phase === 'run') { drawFall4Runner(); return; }
     if (levelId === 4) { drawFalling(); drawVignette(); return; }
+    if (levelId === 5) { drawLevel5(); return; }
     if (levelId === 1) {
       drawSky(); drawSun(); drawClouds(); drawMountains();
       drawWaterfalls();
@@ -1812,7 +2136,8 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (gstate === 'lose') { tries++; startGame(); return; }
     if (gstate !== 'play') return;
     if (levelId === 3) { flVY = FL_FLAP_V; return; }
-    if (levelId === 4 && fall4Phase === 'fall') return; // fall phase uses pointerDown with position
+    if (levelId === 4 && fall4Phase === 'fall') return;
+    if (levelId === 5) return; // level 5 input via pointerDown
     if (!player.alive) return;
     if (player.jumps < 2) {
       player.vy = player.jumps === 0 ? JUMP_VEL : JUMP_VEL * 0.86;
@@ -1844,6 +2169,11 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
       if (x < W / 2) fallHoldL++; else fallHoldR++;
       return;
     }
+    if (levelId === 5) {
+      // Don't throw if tapping joystick zone (bottom-left 180px)
+      if (!(x < 180 && y > H - 180)) throwMic(x, y);
+      return;
+    }
     pressJump();
   }
 
@@ -1856,10 +2186,14 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     }
   }
 
+  function setJoystick(dx: number, dy: number) {
+    if (levelId === 5) { l5JDX = dx; l5JDY = dy; }
+  }
+
   function destroy() {
     cancelAnimationFrame(rafId);
     window.removeEventListener('resize', resize);
   }
 
-  return { pressJump, releaseJump, pointerDown, pointerUp, destroy };
+  return { pressJump, releaseJump, pointerDown, pointerUp, setJoystick, destroy };
 }
