@@ -54,6 +54,19 @@ const FALL_WIN_Y     = 10800;
 
 const TAU = Math.PI * 2;
 
+// Pre-generated scenery for Flappy level (world-space coords 0..FL_WIN_DIST*1.1)
+const FLAP_BG = (() => {
+  let s = 77665544;
+  const r = () => { s = (s * 1664525 + 1013904223) >>> 0; return (s >>> 0) / 4294967296; };
+  const clouds = Array.from({ length: 55 }, () => ({
+    x: r() * FL_WIN_DIST * 1.08, y: r() * 0.62, w: 80 + r() * 220, o: 0.3 + r() * 0.5,
+  }));
+  const stars = Array.from({ length: 80 }, () => ({
+    fx: r(), fy: r() * 0.50, sr: 0.8 + r() * 1.5, phase: r() * Math.PI * 2,
+  }));
+  return { clouds, stars };
+})();
+
 // ===== Color palette — golden hour =====
 const PAL = {
   skyTop: '#7fb3c4', skyMid: '#f7c87a', skyBot: '#f49b6e',
@@ -736,31 +749,76 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   }
 
   function drawFlappy() {
-    // Sky gradient (pink cloud palette)
+    const t = performance.now() / 1000;
+
+    // Sky gradient
     const sg = ctx.createLinearGradient(0, 0, 0, H);
     sg.addColorStop(0, CLOUD_PAL.skyTop); sg.addColorStop(0.55, CLOUD_PAL.skyMid); sg.addColorStop(1, CLOUD_PAL.skyBot);
     ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H);
+
+    // Moon (upper-left, drifts slowly away as level progresses)
+    const moonX = W * 0.13 - flScrollX * 0.008, moonY = H * 0.11, moonR = Math.min(32, H * 0.046);
+    if (moonX > -moonR * 3) {
+      const mg = ctx.createRadialGradient(moonX, moonY, 0, moonX, moonY, moonR * 2.8);
+      mg.addColorStop(0, 'rgba(255,245,220,0.50)'); mg.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = mg; ctx.fillRect(moonX - moonR * 3, moonY - moonR * 3, moonR * 6, moonR * 6);
+      ctx.fillStyle = '#fff8ee'; ctx.beginPath(); ctx.arc(moonX, moonY, moonR, 0, TAU); ctx.fill();
+      ctx.fillStyle = CLOUD_PAL.skyTop;
+      ctx.beginPath(); ctx.arc(moonX + moonR * 0.32, moonY - moonR * 0.08, moonR * 0.87, 0, TAU); ctx.fill();
+    }
+
+    // Stars — very slow parallax, twinkling
+    ctx.fillStyle = '#fff8f4';
+    for (const s of FLAP_BG.stars) {
+      if (s.fy > 0.46) continue;
+      const twinkle = 0.38 + 0.62 * Math.sin(t * 1.6 + s.phase);
+      const stx = ((s.fx - flScrollX * 0.00008) % 1 + 1) % 1 * W;
+      ctx.globalAlpha = twinkle * 0.72;
+      ctx.beginPath(); ctx.arc(stx, s.fy * H, s.sr, 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
     // Sun
     const sunX = W * 0.76, sunY = H * 0.14;
     const gr = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 180);
     gr.addColorStop(0, CLOUD_PAL.sunGlow); gr.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = gr; ctx.fillRect(sunX-200, sunY-200, 400, 400);
+    ctx.fillStyle = gr; ctx.fillRect(sunX - 200, sunY - 200, 400, 400);
     ctx.fillStyle = CLOUD_PAL.sun; ctx.beginPath(); ctx.arc(sunX, sunY, 40, 0, TAU); ctx.fill();
+
+    // Far parallax clouds (large blobs, slow)
+    ctx.fillStyle = CLOUD_PAL.cloudFar;
+    for (const c of FLAP_BG.clouds) {
+      if (c.w <= 160) continue;
+      const cx2 = c.x * 0.12 - flScrollX * 0.06;
+      if (cx2 + c.w < -60 || cx2 > W + 60) continue;
+      ctx.globalAlpha = c.o * 0.38;
+      drawCloudBlob(cx2, c.y * H * 0.50, c.w * 0.80, c.w * 0.28);
+    }
+    ctx.globalAlpha = 1;
+
+    // Mid parallax clouds (smaller, faster)
+    ctx.fillStyle = CLOUD_PAL.cloudMid;
+    for (const c of FLAP_BG.clouds) {
+      if (c.w > 160) continue;
+      const cx2 = c.x * 0.26 - flScrollX * 0.15;
+      if (cx2 + c.w < -60 || cx2 > W + 60) continue;
+      ctx.globalAlpha = c.o * 0.50;
+      drawCloudBlob(cx2, c.y * H * 0.58 + H * 0.06, c.w * 0.65, c.w * 0.22);
+    }
+    ctx.globalAlpha = 1;
+
     // Obstacles
     for (const o of FLAP_OBS_DEFS) {
-      const sx = o.wx - flScrollX;
-      if (sx + FL_OBS_W < -10 || sx > W + 10) continue;
-      const gapY = o.gapFrac * H;
-      drawFlappyObstacle(sx, gapY);
+      const osx = o.wx - flScrollX;
+      if (osx + FL_OBS_W < -10 || osx > W + 10) continue;
+      drawFlappyObstacle(osx, o.gapFrac * H);
     }
+
     // Stage at end
-    if (flScrollX > FL_WIN_DIST - W) {
-      const sx = FL_WIN_DIST - flScrollX;
-      ctx.fillStyle = '#ffd9e6';
-      ctx.fillRect(sx, H * 0.35, 6, H * 0.3);
-      // Mic stand silhouette
-      ctx.fillStyle = '#2a1828'; ctx.fillRect(sx + 2, H * 0.37, 3, H * 0.25);
+    if (flScrollX > FL_WIN_DIST - W * 1.15) {
+      drawFlappyStage(FL_WIN_DIST - flScrollX);
     }
+
     // Player
     const tilt = Math.max(-0.45, Math.min(0.45, flVY / 1200));
     ctx.save();
@@ -807,6 +865,130 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     ctx.fillStyle = 'rgba(255,255,255,0.2)';
     ctx.fillRect(sx, 0, 4, gapY);
     ctx.fillRect(sx, botY, 4, H - botY);
+  }
+
+  function drawFlappyStage(sx: number) {
+    const t = performance.now() / 1000;
+    const blink = (performance.now() / 260) | 0;
+    const gapY  = H * 0.26;
+    const botY  = gapY + FL_GAP_H;
+    const gapCy = (gapY + botY) / 2;
+    // Visible panel fills from sx to right edge
+    const panelX = Math.max(0, sx);
+    const panelW = W - panelX;
+    if (panelW <= 0) return;
+
+    // Warm glow through the gap opening
+    const gbg = ctx.createRadialGradient(panelX + 50, gapCy, 0, panelX + 50, gapCy, FL_GAP_H);
+    gbg.addColorStop(0, 'rgba(255,240,190,0.70)'); gbg.addColorStop(1, 'rgba(255,180,200,0)');
+    ctx.fillStyle = gbg; ctx.fillRect(panelX, gapY, panelW, FL_GAP_H);
+
+    // Spotlight beam fanning leftward from arch
+    if (sx > -40 && sx < W) {
+      const beamA = 0.11 + 0.04 * Math.sin(t * 0.9);
+      const bg2 = ctx.createLinearGradient(sx, gapCy, 0, gapCy);
+      bg2.addColorStop(0, `rgba(255,240,200,${beamA})`); bg2.addColorStop(1, 'rgba(255,240,200,0)');
+      ctx.fillStyle = bg2;
+      ctx.beginPath();
+      ctx.moveTo(sx, gapY + 12); ctx.lineTo(sx, botY - 12);
+      ctx.lineTo(0, gapCy + 90); ctx.lineTo(0, gapCy - 90);
+      ctx.closePath(); ctx.fill();
+    }
+
+    // Top curtain — deep burgundy with fold lines and puffy bottom edge
+    ctx.fillStyle = '#7a1f3a'; ctx.fillRect(panelX, 0, panelW, gapY);
+    ctx.strokeStyle = 'rgba(0,0,0,0.14)'; ctx.lineWidth = 4;
+    for (let i = 0; i < panelW; i += 28) {
+      ctx.beginPath(); ctx.moveTo(panelX + i, 0); ctx.lineTo(panelX + i, gapY); ctx.stroke();
+    }
+    const shTop = ctx.createLinearGradient(panelX, 0, panelX + 36, 0);
+    shTop.addColorStop(0, 'rgba(255,255,255,0.20)'); shTop.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = shTop; ctx.fillRect(panelX, 0, panelW, gapY);
+    // Puffy rose edge
+    ctx.fillStyle = '#9e2845';
+    const nTop = Math.ceil(panelW / 22);
+    for (let i = 0; i < nTop; i++) {
+      const r = 14 + (i % 3) * 5;
+      ctx.beginPath(); ctx.arc(panelX + (i + 0.5) * panelW / nTop, gapY, r, 0, TAU); ctx.fill();
+    }
+    // Gold fringe
+    const nFringe = Math.ceil(panelW / 14);
+    for (let i = 0; i < nFringe; i++) {
+      const fx = panelX + panelW * i / Math.max(1, nFringe - 1);
+      const flen = 18 + (i % 3) * 7;
+      ctx.fillStyle = '#ffd470'; ctx.fillRect(fx - 1.2, gapY - 2, 2.4, flen);
+      ctx.beginPath(); ctx.arc(fx, gapY - 2 + flen, 3.2, 0, TAU); ctx.fill();
+    }
+
+    // Bottom stage floor — dark with cloud platform edge and footlights
+    ctx.fillStyle = '#3a1a28'; ctx.fillRect(panelX, botY, panelW, H - botY);
+    ctx.fillStyle = CLOUD_PAL.platformSurf;
+    const nBot = Math.ceil(panelW / 22);
+    for (let i = 0; i < nBot; i++) {
+      const r = 14 + (i % 3) * 5;
+      ctx.beginPath(); ctx.arc(panelX + (i + 0.5) * panelW / nBot, botY, r, 0, TAU); ctx.fill();
+    }
+    ctx.fillStyle = '#7a3050'; ctx.fillRect(panelX, botY + 14, panelW, 5);
+    const nLights = Math.max(1, Math.ceil(panelW / 48));
+    for (let i = 0; i < nLights; i++) {
+      const lx = panelX + panelW * (i + 0.5) / nLights;
+      ctx.fillStyle = '#ffd470';
+      ctx.globalAlpha = (blink + i) % 3 !== 0 ? 0.9 : 0.22;
+      ctx.beginPath(); ctx.arc(lx, botY + 17, 4, 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Arch frame + bulbs at leading edge (sx)
+    if (sx > -8 && sx < W) {
+      ctx.fillStyle = '#c89028';
+      ctx.fillRect(sx - 5, 0, 10, gapY);
+      ctx.fillRect(sx - 5, botY, 10, H - botY);
+      for (let i = 0; i < 10; i++) {
+        const ly = gapY * i / 9;
+        ctx.fillStyle = '#ffd470';
+        ctx.globalAlpha = (blink + i) % 3 !== 0 ? 0.9 : 0.25;
+        ctx.beginPath(); ctx.arc(sx, ly, 4, 0, TAU); ctx.fill();
+      }
+      for (let i = 0; i < 8; i++) {
+        const ly = botY + (H - botY) * i / 7;
+        ctx.globalAlpha = (blink + i + 4) % 3 !== 0 ? 0.9 : 0.25;
+        ctx.beginPath(); ctx.arc(sx, ly, 4, 0, TAU); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      // Banner
+      const bW = 178, bH = 56, bX = sx + 14, bY = Math.max(10, gapY - bH - 22);
+      if (bY + bH < gapY - 6 && bX + bW < W - 4) {
+        ctx.fillStyle = '#fff2c4'; ctx.fillRect(bX, bY, bW, bH);
+        ctx.strokeStyle = '#c8a030'; ctx.lineWidth = 2; ctx.strokeRect(bX, bY, bW, bH);
+        ctx.save();
+        ctx.fillStyle = '#1f0e26';
+        ctx.font = '700 italic 15px "Playfair Display", serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('MISS JUMP', bX + bW / 2, bY + bH * 0.40);
+        ctx.font = '500 9px "Inter", sans-serif'; ctx.fillStyle = '#7a3a4a';
+        ctx.fillText('LIVE TONIGHT', bX + bW / 2, bY + bH * 0.73);
+        ctx.restore();
+        for (let i = 0; i < 9; i++) {
+          const lx2 = bX + bW * i / 8;
+          ctx.fillStyle = '#ffd470';
+          ctx.globalAlpha = (blink + i) % 3 !== 0 ? 0.9 : 0.28;
+          ctx.beginPath(); ctx.arc(lx2, bY, 3, 0, TAU); ctx.fill();
+          ctx.beginPath(); ctx.arc(lx2, bY + bH, 3, 0, TAU); ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // Mic stand on stage floor
+      const mx = sx + 52;
+      if (mx < W - 12 && botY < H - 20) {
+        ctx.fillStyle = '#1a1118'; ctx.beginPath(); ctx.ellipse(mx, botY + 12, 16, 5, 0, 0, TAU); ctx.fill();
+        ctx.fillStyle = '#2a2230'; ctx.fillRect(mx - 1.5, botY - 100, 3, 112);
+        ctx.fillStyle = '#6a6478'; ctx.fillRect(mx - 0.5, botY - 100, 1, 112);
+        ctx.fillStyle = '#3a3448'; ctx.beginPath(); ctx.ellipse(mx, botY - 102, 8, 11, 0, 0, TAU); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.beginPath(); ctx.ellipse(mx - 2, botY - 106, 3, 4.5, -0.3, 0, TAU); ctx.fill();
+      }
+    }
   }
 
   // ── Level 4 (Falling) state & logic ────────────────────────────────────────

@@ -10,9 +10,48 @@ import {
 
 type LevelId = 1 | 2 | 3 | 4;
 
+// Volume targets per game state
+const VOL = { menu: 0.25 as number, play: 0.7 as number, dead: 0.15 as number };
+
+function useMusic() {
+  const audio = useRef<HTMLAudioElement | null>(null);
+  const target = useRef(VOL.menu);
+  const raf    = useRef(0);
+
+  const fade = useCallback(() => {
+    const a = audio.current;
+    if (!a) return;
+    const diff = target.current - a.volume;
+    if (Math.abs(diff) < 0.005) { a.volume = target.current; return; }
+    a.volume = Math.max(0, Math.min(1, a.volume + diff * 0.06));
+    raf.current = requestAnimationFrame(fade);
+  }, []);
+
+  const setVol = useCallback((v: number) => {
+    target.current = v;
+    cancelAnimationFrame(raf.current);
+    raf.current = requestAnimationFrame(fade);
+  }, [fade]);
+
+  // Start audio on first user interaction (browser autoplay policy)
+  const start = useCallback(() => {
+    if (audio.current) return;
+    const a = new Audio("/bg-music.mp3");
+    a.loop = true;
+    a.volume = 0;
+    a.play().catch(() => {});
+    audio.current = a;
+    setVol(VOL.menu);
+  }, [setVol]);
+
+  useEffect(() => () => { cancelAnimationFrame(raf.current); audio.current?.pause(); }, []);
+  return { start, setVol };
+}
+
 export default function Game() {
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const controlRef = useRef<ReturnType<typeof createGame> | null>(null);
+  const music      = useMusic();
 
   const [levelId,  setLevelId]  = useState<LevelId | null>(null);
   const [custom,   setCustom]   = useState<CharCustom>(DEFAULT_CUSTOM);
@@ -21,6 +60,18 @@ export default function Game() {
   const [progress, setProgress] = useState(0);
   const [winData,  setWinData]  = useState<{ score: number; tries: number } | null>(null);
   const [tapHint,  setTapHint]  = useState(false);
+
+  // Adjust volume whenever game state changes
+  useEffect(() => {
+    if (state === "play" || state === "stage") music.setVol(VOL.play);
+    else if (state === "lose")                 music.setVol(VOL.dead);
+    else                                       music.setVol(VOL.menu);
+  }, [state, music]);
+
+  // Menu volume when back on level selection
+  useEffect(() => {
+    if (levelId === null) music.setVol(VOL.menu);
+  }, [levelId, music]);
 
   useEffect(() => {
     if (!levelId) return;
@@ -47,7 +98,7 @@ export default function Game() {
   useEffect(() => {
     const el = canvasRef.current;
     if (!el) return;
-    const down = (e: PointerEvent) => { e.preventDefault(); controlRef.current?.pointerDown(e.clientX, e.clientY); };
+    const down = (e: PointerEvent) => { e.preventDefault(); music.start(); controlRef.current?.pointerDown(e.clientX, e.clientY); };
     const up   = (e: PointerEvent) => { e.preventDefault(); controlRef.current?.pointerUp(e.clientX, e.clientY); };
     el.addEventListener("pointerdown",   down, { passive: false });
     el.addEventListener("pointerup",     up,   { passive: false });
@@ -62,7 +113,7 @@ export default function Game() {
   useEffect(() => {
     const W2 = window.innerWidth / 2;
     const kd = (e: KeyboardEvent) => {
-      if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") { e.preventDefault(); pressJump(); }
+      if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") { e.preventDefault(); music.start(); pressJump(); }
       if (e.code === "ArrowLeft")  { e.preventDefault(); controlRef.current?.pointerDown(W2 - 1, 1); }
       if (e.code === "ArrowRight") { e.preventDefault(); controlRef.current?.pointerDown(W2 + 1, 1); }
     };
