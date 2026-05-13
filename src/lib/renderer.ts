@@ -321,7 +321,7 @@ function drawMissLi(ctx: CanvasRenderingContext2D, x: number, y: number, frame: 
   // Top crown mass
   ctx.fillStyle = C.hair;
   ctx.beginPath();
-  ctx.ellipse(cx - 1, y + 4, 11, 8, -0.05, 0, Math.PI * 2);
+  ctx.ellipse(cx - 1, y + 1, 11, 7, -0.05, 0, Math.PI * 2);
   ctx.fill();
 
   // Forehead sweep (natural parting, sweeps to right)

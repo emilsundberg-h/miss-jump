@@ -48,12 +48,17 @@ const FALL_OBS_DEFS: { wy: number; gapFrac: number; gapWFrac: number }[] = (() =
   const list: { wy: number; gapFrac: number; gapWFrac: number }[] = [];
   let s = 9876543;
   const r = () => { s = (s * 1664525 + 1013904223) >>> 0; return (s >>> 0) / 4294967296; };
-  // Gaps strictly left OR right — never in the centre, so holding middle is never safe.
-  // Width 22–30% of screen.  Spacing tightens from 320 → 220 px over the level.
+  // Gaps left or right — never centre, so hovering middle is never safe.
+  // Each gap is clamped to MAX_SHIFT from the previous so consecutive gaps are always reachable.
+  // Width 22–30% of screen. Spacing tightens from 320 → 220 px over the level.
+  const MAX_SHIFT = 0.22; // max fraction of screen width the player can cross between obstacles
+  let prevCentre = 0.5;
   for (let y = 900; y < 10500; y += Math.max(220, 320 - y / 60)) {
     const left = r() < 0.5;
-    const centre = left ? 0.10 + r() * 0.22 : 0.68 + r() * 0.22; // 0.10–0.32 or 0.68–0.90
-    const hw = 0.11 + r() * 0.04;   // half-width 11–15% (narrow gap)
+    const raw = left ? 0.10 + r() * 0.22 : 0.68 + r() * 0.22; // desired centre
+    const hw = 0.11 + r() * 0.04;
+    const centre = Math.max(prevCentre - MAX_SHIFT, Math.min(prevCentre + MAX_SHIFT, raw));
+    prevCentre = centre;
     list.push({ wy: y, gapFrac: Math.max(0.02, Math.min(0.75, centre - hw)), gapWFrac: hw * 2 });
   }
   return list;
@@ -802,16 +807,16 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   const l5MicY2 = () => l5SY() + 70;
 
   function spawnInterval() {
-    if (l5SpawnCount < 10) return 4.0;
-    if (l5SpawnCount < 25) return 3.0;
-    if (l5SpawnCount < 35) return 2.2;
-    return 1.6;
+    if (l5SpawnCount < 8)  return 2.6;
+    if (l5SpawnCount < 20) return 1.8;
+    if (l5SpawnCount < 32) return 1.2;
+    return 0.8;
   }
   function enemySpeed() {
-    if (l5SpawnCount < 10) return 68;
-    if (l5SpawnCount < 25) return 90;
-    if (l5SpawnCount < 35) return 115;
-    return 140;
+    if (l5SpawnCount < 8)  return 115;
+    if (l5SpawnCount < 20) return 160;
+    if (l5SpawnCount < 32) return 210;
+    return 270;
   }
 
   function startLevel5() {
@@ -1006,65 +1011,121 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
       ctx.restore();
     }
 
+    // ── draw helper: top-down human (rot = facing direction) ──────────────────
+    const drawHuman = (
+      hx: number, hy: number, rot: number,
+      outfitC: string, accentC: string, hairC: string,
+      isMissLi = false, alpha = 1,
+    ) => {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(hx, hy);
+      ctx.rotate(rot + Math.PI / 2); // +90° so "forward" = up in local space
+
+      // Drop shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      ctx.beginPath(); ctx.ellipse(3, 4, 14, 11, 0, 0, TAU); ctx.fill();
+
+      // Shoes
+      ctx.fillStyle = '#1a1018';
+      ctx.beginPath(); ctx.ellipse(-4, 17, 4, 6, 0.15, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(4, 17, 4, 6, -0.15, 0, TAU); ctx.fill();
+
+      // Outfit / dress body
+      ctx.fillStyle = outfitC;
+      ctx.beginPath(); ctx.ellipse(0, 4, 13, 17, 0, 0, TAU); ctx.fill();
+      // Hem accent
+      ctx.fillStyle = accentC;
+      ctx.beginPath(); ctx.ellipse(0, 17, 13, 5, 0, 0, TAU); ctx.fill();
+
+      // Arms (skin)
+      ctx.fillStyle = '#f4d2b8';
+      ctx.beginPath(); ctx.ellipse(-13, 0, 4, 8, 0.4, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(13, 0, 4, 8, -0.4, 0, TAU); ctx.fill();
+
+      // Neck
+      ctx.fillStyle = '#f4d2b8';
+      ctx.beginPath(); ctx.ellipse(0, -5, 4, 5, 0, 0, TAU); ctx.fill();
+
+      // Hair back volume
+      ctx.fillStyle = hairC;
+      ctx.beginPath(); ctx.ellipse(0, -13, 12, 10, 0, 0, TAU); ctx.fill();
+      if (isMissLi) {
+        // Side flowing hair (left side, visible from above)
+        ctx.beginPath();
+        ctx.moveTo(-8, -10);
+        ctx.bezierCurveTo(-19, -10, -17, 4, -10, 9);
+        ctx.bezierCurveTo(-7, 3, -8, -6, -6, -10);
+        ctx.closePath(); ctx.fill();
+      }
+
+      // Head (face circle)
+      ctx.fillStyle = '#f7d8be';
+      ctx.beginPath(); ctx.arc(0, -10, 9, 0, TAU); ctx.fill();
+
+      // Eyes — two small dots
+      ctx.fillStyle = '#1a1320';
+      ctx.beginPath(); ctx.arc(-3, -13, 1.5, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(3, -13, 1.5, 0, TAU); ctx.fill();
+
+      if (isMissLi) {
+        // Red lips
+        ctx.fillStyle = '#c0394a';
+        ctx.beginPath(); ctx.arc(0, -9, 2.2, 0.1, Math.PI - 0.1); ctx.fill();
+        // Front hair / fringe over forehead
+        ctx.fillStyle = hairC;
+        ctx.beginPath(); ctx.ellipse(0, -18, 10, 5, 0, 0, TAU); ctx.fill();
+        // Earring (right ear)
+        ctx.fillStyle = '#f0d060';
+        ctx.beginPath(); ctx.arc(9, -9, 2.5, 0, TAU); ctx.fill();
+      } else {
+        // Enemy: small mouth line
+        ctx.strokeStyle = '#c08060'; ctx.lineWidth = 1.2; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(-2.5, -8); ctx.lineTo(2.5, -8); ctx.stroke();
+      }
+
+      ctx.restore();
+    };
+
+    // Hair colours per enemy (cycle through palette, slightly darker than outfit)
+    const HAIR_COLS = ['#8a5040','#6a4870','#4a6040','#704830','#405060','#604040','#507040','#486040'];
+
     // Enemies
     for (const e of l5Enemies) {
+      const hIdx = e.id % HAIR_COLS.length;
+      const hiColor = L5_ENEMY_COLORS[(e.id + 2) % L5_ENEMY_COLORS.length]; // lighter accent
       if (!e.alive) {
-        const a = Math.max(0, 1 - e.hitT * 3);
-        ctx.save(); ctx.globalAlpha = a;
-        ctx.fillStyle = e.color;
-        ctx.beginPath(); ctx.ellipse(e.x, e.y, 16, 11, e.angle, 0, TAU); ctx.fill();
-        ctx.restore();
+        drawHuman(e.x, e.y, e.angle, e.color, hiColor, HAIR_COLS[hIdx], false, Math.max(0, 1 - e.hitT * 3));
         continue;
       }
-      // Shadow
-      ctx.fillStyle = 'rgba(0,0,0,0.3)';
-      ctx.beginPath(); ctx.ellipse(e.x+3, e.y+3, 16, 11, e.angle, 0, TAU); ctx.fill();
-      // Body
-      ctx.fillStyle = e.color;
-      ctx.beginPath(); ctx.ellipse(e.x, e.y, 16, 11, e.angle, 0, TAU); ctx.fill();
-      // Head
-      ctx.fillStyle = '#f4d2b8';
-      const hx2 = e.x + Math.cos(e.angle)*8, hy2 = e.y + Math.sin(e.angle)*8;
-      ctx.beginPath(); ctx.arc(hx2, hy2, 7, 0, TAU); ctx.fill();
-      // Eyes
-      ctx.fillStyle = '#1a1320';
-      const ex2 = hx2 + Math.cos(e.angle+0.5)*3, ey2 = hy2 + Math.sin(e.angle+0.5)*3;
-      ctx.beginPath(); ctx.arc(ex2, ey2, 1.5, 0, TAU); ctx.fill();
+      drawHuman(e.x, e.y, e.angle, e.color, hiColor, HAIR_COLS[hIdx]);
     }
 
     // Mic (flying)
     if (l5MicOut) {
       const trail = l5MicPhase === 'flying' ? 0.6 : 0.35;
       ctx.save();
-      ctx.shadowBlur = 12; ctx.shadowColor = '#ffd070';
-      ctx.fillStyle = '#ffe060';
+      ctx.shadowBlur = 14; ctx.shadowColor = '#ffd070';
       ctx.translate(l5MicX, l5MicY);
       ctx.rotate(Math.atan2(l5MicVY, l5MicVX));
-      ctx.beginPath(); ctx.ellipse(0, 0, 10, 5, 0, 0, TAU); ctx.fill();
-      ctx.fillStyle = '#8a6020'; ctx.fillRect(-2, 5, 4, 10);
+      ctx.fillStyle = '#ffe060';
+      ctx.beginPath(); ctx.ellipse(0, 0, 11, 5, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#8a6020'; ctx.fillRect(-2, 5, 4, 11);
+      // Grille dots
+      ctx.fillStyle = '#c8a040';
+      for (let i = -3; i <= 3; i += 3) { ctx.beginPath(); ctx.arc(i, 0, 1, 0, TAU); ctx.fill(); }
       ctx.restore();
-      // Trail
       ctx.fillStyle = `rgba(255,220,80,${trail})`;
       ctx.beginPath(); ctx.arc(l5MicX - l5MicVX*0.04, l5MicY - l5MicVY*0.04, 4, 0, TAU); ctx.fill();
     } else {
-      // Mic held by player — small icon near them
+      // Mic held — small icon raised in player's forward hand
+      const mhx = l5PX + Math.cos(l5PAngle)*22, mhy = l5PY + Math.sin(l5PAngle)*22;
       ctx.fillStyle = '#ffe060';
-      ctx.beginPath(); ctx.ellipse(l5PX + Math.cos(l5PAngle)*20, l5PY + Math.sin(l5PAngle)*20, 6, 3, l5PAngle, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(mhx, mhy, 6, 3, l5PAngle, 0, TAU); ctx.fill();
     }
 
-    // Player
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.beginPath(); ctx.ellipse(l5PX+3, l5PY+3, 18, 13, l5PAngle, 0, TAU); ctx.fill();
-    ctx.fillStyle = custom.dress;
-    ctx.beginPath(); ctx.ellipse(l5PX, l5PY, 18, 13, l5PAngle, 0, TAU); ctx.fill();
-    ctx.fillStyle = custom.hair;
-    const phx = l5PX + Math.cos(l5PAngle)*10, phy = l5PY + Math.sin(l5PAngle)*10;
-    ctx.beginPath(); ctx.arc(phx, phy, 12, 0, TAU); ctx.fill();
-    ctx.fillStyle = '#f7d8be';
-    ctx.beginPath(); ctx.arc(phx, phy, 8, 0, TAU); ctx.fill();
-    // Direction dot
-    ctx.fillStyle = '#c0394a';
-    ctx.beginPath(); ctx.arc(phx + Math.cos(l5PAngle)*5, phy + Math.sin(l5PAngle)*5, 3, 0, TAU); ctx.fill();
+    // Player (Miss Li)
+    drawHuman(l5PX, l5PY, l5PAngle, custom.dress, custom.dressAccent, custom.hair, true);
 
     // Particles
     drawParticles();
