@@ -1688,7 +1688,8 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   // ── Controls ──
   function pressJump() {
     if (gstate === 'start') { startGame(); return; }
-    if (gstate === 'lose' || gstate === 'win') { tries++; startGame(); return; }
+    if (gstate === 'win')  { tries = 1; startGame(); return; }
+    if (gstate === 'lose') { tries++; startGame(); return; }
     if (gstate !== 'play') return;
     if (levelId === 3) { flVY = FL_FLAP_V; return; }
     if (levelId === 4) return; // falling mode uses pointerDown with position
@@ -1715,7 +1716,8 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
 
   function pointerDown(x: number, y: number) {
     if (gstate === 'start') { startGame(); return; }
-    if (gstate === 'lose' || gstate === 'win') { tries++; startGame(); return; }
+    if (gstate === 'win')  { tries = 1; startGame(); return; }
+    if (gstate === 'lose') { tries++; startGame(); return; }
     if (gstate !== 'play') return;
     if (levelId === 3) { flVY = FL_FLAP_V; return; }
     if (levelId === 4) {

@@ -11,7 +11,7 @@ import {
 type LevelId = 1 | 2 | 3 | 4;
 
 // Volume targets per game state
-const VOL = { menu: 0.12 as number, play: 0.7 as number, dead: 0.07 as number };
+const VOL = { menu: 0.07 as number, play: 0.7 as number, dead: 0.07 as number };
 
 function useMusic() {
   const audio = useRef<HTMLAudioElement | null>(null);
@@ -59,6 +59,7 @@ export default function Game() {
   const [score,    setScore]    = useState(0);
   const [progress, setProgress] = useState(0);
   const [winData,  setWinData]  = useState<{ score: number; tries: number } | null>(null);
+  const [tries,    setTries]    = useState(1);
   const [tapHint,  setTapHint]  = useState(false);
 
   // Adjust volume whenever game state changes
