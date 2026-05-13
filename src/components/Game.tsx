@@ -8,7 +8,7 @@ import {
   drawPreviewChar,
 } from "@/lib/game";
 
-type LevelId = 1 | 2;
+type LevelId = 1 | 2 | 3 | 4;
 
 export default function Game() {
   const canvasRef  = useRef<HTMLCanvasElement>(null);
@@ -47,8 +47,8 @@ export default function Game() {
   useEffect(() => {
     const el = canvasRef.current;
     if (!el) return;
-    const down = (e: PointerEvent) => { e.preventDefault(); pressJump(); };
-    const up   = (e: PointerEvent) => { e.preventDefault(); releaseJump(); };
+    const down = (e: PointerEvent) => { e.preventDefault(); controlRef.current?.pointerDown(e.clientX, e.clientY); };
+    const up   = (e: PointerEvent) => { e.preventDefault(); controlRef.current?.pointerUp(e.clientX, e.clientY); };
     el.addEventListener("pointerdown",   down, { passive: false });
     el.addEventListener("pointerup",     up,   { passive: false });
     el.addEventListener("pointercancel", up,   { passive: false });
@@ -57,14 +57,19 @@ export default function Game() {
       el.removeEventListener("pointerup",     up);
       el.removeEventListener("pointercancel", up);
     };
-  }, [pressJump, releaseJump]);
+  }, []); // pointerDown/Up stable refs via controlRef
 
   useEffect(() => {
+    const W2 = window.innerWidth / 2;
     const kd = (e: KeyboardEvent) => {
       if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") { e.preventDefault(); pressJump(); }
+      if (e.code === "ArrowLeft")  { e.preventDefault(); controlRef.current?.pointerDown(W2 - 1, 1); }
+      if (e.code === "ArrowRight") { e.preventDefault(); controlRef.current?.pointerDown(W2 + 1, 1); }
     };
     const ku = (e: KeyboardEvent) => {
       if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") releaseJump();
+      if (e.code === "ArrowLeft")  controlRef.current?.pointerUp(W2 - 1, 1);
+      if (e.code === "ArrowRight") controlRef.current?.pointerUp(W2 + 1, 1);
     };
     window.addEventListener("keydown", kd);
     window.addEventListener("keyup",   ku);
@@ -153,14 +158,20 @@ export default function Game() {
             </div>
           </div>
 
-          {/* Level cards */}
-          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "center" }}>
-            <LevelCard num={1} title="Skogsturné" description="Mossiga stenar, vattenfall och bentaggar. Spring mot scenen i skogen." difficulty={2}
+          {/* Level cards — 2×2 grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, maxWidth: 560 }}>
+            <LevelCard num={1} title="Skogsturné" description="Spring på mossiga plattor, hoppa över taggar och avgrunder." difficulty={2} mechanic="🏃 Hoppa"
               palette={{ bg: "linear-gradient(150deg,#1e2e14,#101e0e)", accent: "#85b84a", dot: "#a0c862", badge: "#3a6020" }}
               onClick={() => setLevelId(1)} />
-            <LevelCard num={2} title="Molnturné" description="Fluffiga moln och blixtar högt uppe bland stjärnorna." difficulty={3}
-              palette={{ bg: "linear-gradient(150deg,#12224a,#0a1428)", accent: "#72b8e8", dot: "#f4d820", badge: "#1e508a" }}
+            <LevelCard num={2} title="Molnturné" description="Klättra på rosa moln och undvik blixtar högt uppe i skyn." difficulty={3} mechanic="☁️ Hoppa"
+              palette={{ bg: "linear-gradient(150deg,#5a2050,#3a1038)", accent: "#ff9ec0", dot: "#ffd86b", badge: "#a04070" }}
               onClick={() => setLevelId(2)} />
+            <LevelCard num={3} title="Miss Flappy" description="Tryck för att flyga uppåt, passera genom gluggar i molnen." difficulty={2} mechanic="🪶 Tryck = flyg"
+              palette={{ bg: "linear-gradient(150deg,#204860,#102030)", accent: "#ffc5d2", dot: "#fff6fa", badge: "#904060" }}
+              onClick={() => setLevelId(3)} />
+            <LevelCard num={4} title="Fritt Fall" description="Faller nedåt — tryck vänster/höger sida för att svänga." difficulty={4} mechanic="↙↘ Sväng"
+              palette={{ bg: "linear-gradient(150deg,#0a1030,#050818)", accent: "#b8d0f0", dot: "#ffd9e6", badge: "#204080" }}
+              onClick={() => setLevelId(4)} />
           </div>
         </div>
       </Overlay>
@@ -168,11 +179,15 @@ export default function Game() {
       {/* ── In-game start ── */}
       <Overlay show={!!levelId && state === "start"}>
         <TitleCard>
-          <Eyebrow>{levelId === 1 ? "Skogsturné · Akt 1" : "Molnturné · Akt 2"}</Eyebrow>
+          <Eyebrow>{["", "Skogsturné · Akt 1","Molnturné · Akt 2","Miss Flappy · Akt 3","Fritt Fall · Akt 4"][levelId!]}</Eyebrow>
           <BigTitle>Miss Jump</BigTitle>
           <Subtitle>{levelId === 1
             ? "Hoppa över taggar och avgrunder. Nå scenen vid vattenfallet."
-            : "Hoppa mellan molnen. Akta blixtarna. Nå scenen bland stjärnorna."
+            : levelId === 2
+            ? "Hoppa mellan rosa moln. Akta blixtarna. Nå scenen bland stjärnorna."
+            : levelId === 3
+            ? "Tryck för att flyga uppåt. Passa genom gluggar i molnen. Nå scenen i skyn."
+            : "Du faller! Tryck vänster eller höger halva av skärmen för att svänga. Navigera ned till scenen."
           }</Subtitle>
           <Cta onClick={pressJump}>Starta showen <Key>SPACE</Key></Cta>
           <BackLink onClick={() => setLevelId(null)}>← Byt bana</BackLink>
@@ -297,28 +312,27 @@ function Swatch({ color, label, active, onClick }: { color: string; label: strin
 
 // ── Level card ───────────────────────────────────────────────────────────────
 
-function LevelCard({ num, title, description, difficulty, palette, onClick }: {
-  num: number; title: string; description: string; difficulty: number;
+function LevelCard({ num, title, description, difficulty, mechanic, palette, onClick }: {
+  num: number; title: string; description: string; difficulty: number; mechanic: string;
   palette: { bg: string; accent: string; dot: string; badge: string };
   onClick: () => void;
 }) {
   return (
     <button onClick={onClick} style={{
-      flex: "1 1 220px", maxWidth: 260,
-      background: palette.bg, border: `1.5px solid ${palette.accent}44`,
-      borderRadius: 18, padding: "22px 20px 20px", cursor: "pointer",
+      background: palette.bg, border: `1.5px solid ${palette.accent}55`,
+      borderRadius: 16, padding: "18px 16px 16px", cursor: "pointer",
       textAlign: "left", color: "#f5efe6",
-      boxShadow: "0 10px 36px rgba(0,0,0,0.4)", outline: "none",
+      boxShadow: "0 10px 32px rgba(0,0,0,0.45)", outline: "none",
     }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-        <span style={{ background: palette.badge, color: "#fff", fontSize: 10, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", padding: "3px 9px", borderRadius: 99 }}>Bana {num}</span>
-        <span style={{ fontSize: 12, letterSpacing: 2 }}>
-          {[0,1,2].map(i => <span key={i} style={{ color: i < difficulty ? palette.dot : "rgba(255,255,255,0.2)" }}>★</span>)}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+        <span style={{ background: palette.badge, color: "#fff", fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", padding: "2px 8px", borderRadius: 99 }}>Bana {num}</span>
+        <span style={{ fontSize: 11, letterSpacing: 1.5 }}>
+          {[0,1,2,3].map(i => <span key={i} style={{ color: i < difficulty ? palette.dot : "rgba(255,255,255,0.18)" }}>★</span>)}
         </span>
       </div>
-      <div style={{ fontFamily: '"Playfair Display", serif', fontWeight: 700, fontStyle: "italic", fontSize: 22, lineHeight: 1.1, marginBottom: 8, color: "#fff" }}>{title}</div>
-      <div style={{ fontSize: 12, lineHeight: 1.6, color: "rgba(245,239,230,0.68)" }}>{description}</div>
-      <div style={{ marginTop: 16, color: palette.accent, fontSize: 12, fontWeight: 600 }}>Starta →</div>
+      <div style={{ fontFamily: '"Playfair Display", serif', fontWeight: 700, fontStyle: "italic", fontSize: 19, lineHeight: 1.1, marginBottom: 6, color: "#fff" }}>{title}</div>
+      <div style={{ fontSize: 11, lineHeight: 1.55, color: "rgba(245,239,230,0.65)", marginBottom: 10 }}>{description}</div>
+      <div style={{ fontSize: 11, color: palette.accent, fontWeight: 700 }}>{mechanic} &nbsp;→</div>
     </button>
   );
 }

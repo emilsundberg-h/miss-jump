@@ -12,8 +12,38 @@ export interface GameCallbacks {
 export interface GameControls {
   pressJump: () => void;
   releaseJump: () => void;
+  pointerDown: (x: number, y: number) => void;
+  pointerUp:   (x: number, y: number) => void;
   destroy: () => void;
 }
+
+// ── Level 3: Flappy obstacles (gapFrac = gapTop/H, H-independent) ──────────
+const FLAP_OBS_DEFS: { wx: number; gapFrac: number }[] = (() => {
+  const list: { wx: number; gapFrac: number }[] = [];
+  let s = 1234567;
+  const r = () => { s = (s * 1664525 + 1013904223) >>> 0; return (s >>> 0) / 4294967296; };
+  for (let x = 480; x < 10200; x += 300 + r() * 130) list.push({ wx: x, gapFrac: 0.12 + r() * 0.60 });
+  return list;
+})();
+const FL_GAP_H      = 210;  // gap height px
+const FL_OBS_W      = 88;   // obstacle cloud width px
+const FL_GRAVITY    = 2000;
+const FL_FLAP_V     = -580;
+const FL_BASE_SPEED = 240;
+const FL_WIN_DIST   = 10500;
+
+// ── Level 4: Falling obstacles (gap normalised 0-1 over screen width) ───────
+const FALL_OBS_DEFS: { wy: number; gapFrac: number; gapWFrac: number }[] = (() => {
+  const list: { wy: number; gapFrac: number; gapWFrac: number }[] = [];
+  let s = 9876543;
+  const r = () => { s = (s * 1664525 + 1013904223) >>> 0; return (s >>> 0) / 4294967296; };
+  for (let y = 450; y < 10500; y += 320 + r() * 160) list.push({ wy: y, gapFrac: 0.1 + r() * 0.62, gapWFrac: 0.22 + r() * 0.12 });
+  return list;
+})();
+const FALL_SPEED     = 300;   // px/s downward
+const FALL_SIDE_SPD  = 260;   // px/s horizontal
+const FALL_OBS_H     = 60;    // obstacle cloud thickness
+const FALL_WIN_Y     = 10800;
 
 const TAU = Math.PI * 2;
 
@@ -37,6 +67,7 @@ const GRAVITY        = 2000;
 const JUMP_VEL       = -760;
 const JUMP_HOLD_BOOST = -1400;
 const MAX_HOLD       = 0.18;
+const JUMP_CUT_MIN   = 0.45; // velocity fraction kept on instant tap (scales to 1.0 at full hold)
 const MOVE_SPEED     = 320;
 const PLAYER_W       = 38;
 const PLAYER_H       = 64;
@@ -152,20 +183,20 @@ function buildScenery(): Scenery {
 const SCENERY = buildScenery();
 
 // ===== Level 2: Cloud level =====
+// Warm pink cloud palette — from the Miss Jump cloud design
 const CLOUD_PAL = {
-  skyTop: '#2a68b4', skyMid: '#72b8e8', skyBot: '#cce8f8',
-  sun: '#fffce0', sunGlow: 'rgba(255,252,200,0.6)',
-  cloudFar: '#d8eef8', cloudMid: '#e8f5ff',
-  platformSurf: '#f2f7ff', platformMid: '#d8e8f4', platformEdge: '#b8cce0',
-  lightMain: '#f4d820', lightDark: '#b89010', lightGlow: 'rgba(244,216,32,0.42)',
-  mist: 'rgba(160,200,240,0.38)',
-  ambient: 'rgba(80,140,210,0.07)',
-  // these keys satisfy shared drawing functions:
-  stone: '#a0b8cc', stoneDark: '#6888a0', stoneLight: '#c0d0e0',
-  moss: '#70a860', mossLight: '#90c878', grass: '#88c870',
-  spike: '#f4d820', spikeHighlight: '#fff8a0',
-  treeFar: '#5080a8', treeMid: '#306080', treeNear: '#184060',
-  waterTop: '#a0c8e8', waterBot: '#5080a8',
+  skyTop: '#5a7ac8', skyMid: '#b8d0f0', skyBot: '#ffc5d2',
+  sun: '#fff8e8', sunGlow: 'rgba(255,230,200,0.55)',
+  cloudFar: '#fce4ef', cloudMid: '#ffd9e6',
+  platformSurf: '#fff6fa', platformMid: '#ffd9e6', platformEdge: '#f0b0c8',
+  lightMain: '#ff6b9d', lightDark: '#c04878', lightGlow: 'rgba(255,107,157,0.40)',
+  mist: 'rgba(255,180,210,0.35)',
+  ambient: 'rgba(255,100,180,0.05)',
+  stone: '#e0b8c8', stoneDark: '#c890a8', stoneLight: '#f0d0e0',
+  moss: '#d890b0', mossLight: '#f0b0c8', grass: '#f0c8d8',
+  spike: '#ff6b9d', spikeHighlight: '#ffc0d8',
+  treeFar: '#e080b0', treeMid: '#c06090', treeNear: '#904070',
+  waterTop: '#ffd9e6', waterBot: '#ff9ec0',
 };
 
 const CLOUD_PLATFORMS: PlatformDef[] = [
@@ -527,6 +558,8 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
 
   // ── State transitions ──
   function startGame() {
+    if (levelId === 3) { startFlappy(); return; }
+    if (levelId === 4) { startFalling(); return; }
     gstate = 'play'; score = 0;
     player.x = 120; player.y = 0; player.vx = MOVE_SPEED; player.vy = 0;
     player.onGround = true; player.jumps = 0; player.alive = true;
@@ -558,6 +591,8 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
 
   // ── Update ──
   function update(dt: number) {
+    if (levelId === 3) { if (gstate === 'play') updateFlappy(dt); return; }
+    if (levelId === 4) { if (gstate === 'play') updateFalling(dt); return; }
     if (gstate === 'play') {
       // Speed ramps up progressively with distance (1× → 2× over the level)
       const speedMul = Math.min(2.0, 1.0 + player.x / 7000);
@@ -663,12 +698,228 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     });
   }
 
+  // ── Level 3 (Flappy) state & logic ────────────────────────────────────────
+  let flY = 0, flVY = 0, flScrollX = 0;
+
+  function startFlappy() {
+    flY = H * 0.40; flVY = 0; flScrollX = 0;
+    gstate = 'play'; score = 0;
+    cb.onStateChange('play'); cb.onScore(0); cb.onProgress(0);
+  }
+
+  function updateFlappy(dt: number) {
+    const spd = FL_BASE_SPEED * Math.min(2, 1 + flScrollX / 4000);
+    flScrollX += spd * dt;
+    flVY += FL_GRAVITY * dt;
+    flY  += flVY * dt;
+    const PW = 30, PH = 50;
+    if (flY < 0 || flY + PH > H) { loseGame(); return; }
+    for (const o of FLAP_OBS_DEFS) {
+      const sx = o.wx - flScrollX;
+      if (sx + FL_OBS_W < 0 || sx > W) continue;
+      const gapY = o.gapFrac * H;
+      const px = W * 0.22;
+      if (px + PW > sx && px < sx + FL_OBS_W) {
+        if (flY < gapY || flY + PH > gapY + FL_GAP_H) { loseGame(); return; }
+      }
+    }
+    score = FLAP_OBS_DEFS.filter(o => o.wx < flScrollX + W * 0.22).length;
+    cb.onScore(score);
+    cb.onProgress(Math.min(1, flScrollX / FL_WIN_DIST));
+    if (flScrollX >= FL_WIN_DIST) winGame();
+  }
+
+  function drawFlappy() {
+    // Sky gradient (pink cloud palette)
+    const sg = ctx.createLinearGradient(0, 0, 0, H);
+    sg.addColorStop(0, CLOUD_PAL.skyTop); sg.addColorStop(0.55, CLOUD_PAL.skyMid); sg.addColorStop(1, CLOUD_PAL.skyBot);
+    ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H);
+    // Sun
+    const sunX = W * 0.76, sunY = H * 0.14;
+    const gr = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 180);
+    gr.addColorStop(0, CLOUD_PAL.sunGlow); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gr; ctx.fillRect(sunX-200, sunY-200, 400, 400);
+    ctx.fillStyle = CLOUD_PAL.sun; ctx.beginPath(); ctx.arc(sunX, sunY, 40, 0, TAU); ctx.fill();
+    // Obstacles
+    for (const o of FLAP_OBS_DEFS) {
+      const sx = o.wx - flScrollX;
+      if (sx + FL_OBS_W < -10 || sx > W + 10) continue;
+      const gapY = o.gapFrac * H;
+      drawFlappyObstacle(sx, gapY);
+    }
+    // Stage at end
+    if (flScrollX > FL_WIN_DIST - W) {
+      const sx = FL_WIN_DIST - flScrollX;
+      ctx.fillStyle = '#ffd9e6';
+      ctx.fillRect(sx, H * 0.35, 6, H * 0.3);
+      // Mic stand silhouette
+      ctx.fillStyle = '#2a1828'; ctx.fillRect(sx + 2, H * 0.37, 3, H * 0.25);
+    }
+    // Player
+    const tilt = Math.max(-0.45, Math.min(0.45, flVY / 1200));
+    ctx.save();
+    ctx.translate(W * 0.22 + 15, flY + 25);
+    ctx.rotate(tilt * 0.6);
+    renderMissLi(ctx, 0, 0, 0.6, -0.5, true, false, custom);
+    ctx.restore();
+  }
+
+  function drawFlappyObstacle(sx: number, gapY: number) {
+    const C1 = CLOUD_PAL.platformMid, C2 = CLOUD_PAL.platformSurf;
+    // Top bank
+    if (gapY > 0) {
+      ctx.fillStyle = C1; ctx.fillRect(sx, 0, FL_OBS_W, gapY);
+      ctx.fillStyle = C2;
+      const n = Math.ceil(FL_OBS_W / 22);
+      for (let i = 0; i < n; i++) {
+        const r = 14 + (i % 3) * 5;
+        ctx.beginPath(); ctx.arc(sx + (i + 0.5) * FL_OBS_W / n, gapY, r, 0, TAU); ctx.fill();
+      }
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      for (let i = 0; i < n; i++) {
+        const r = (14 + (i % 3) * 5) * 0.4;
+        ctx.beginPath(); ctx.arc(sx + (i + 0.5) * FL_OBS_W / n - 3, gapY - (14 + (i % 3)*5)*0.55, r, 0, TAU); ctx.fill();
+      }
+    }
+    // Bottom bank
+    const botY = gapY + FL_GAP_H;
+    if (botY < H) {
+      ctx.fillStyle = C1; ctx.fillRect(sx, botY, FL_OBS_W, H - botY);
+      ctx.fillStyle = C2;
+      const n = Math.ceil(FL_OBS_W / 22);
+      for (let i = 0; i < n; i++) {
+        const r = 14 + (i % 3) * 5;
+        ctx.beginPath(); ctx.arc(sx + (i + 0.5) * FL_OBS_W / n, botY, r, 0, TAU); ctx.fill();
+      }
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      for (let i = 0; i < n; i++) {
+        const r = (14 + (i % 3) * 5) * 0.4;
+        ctx.beginPath(); ctx.arc(sx + (i + 0.5) * FL_OBS_W / n - 3, botY + (14 + (i%3)*5)*0.55, r, 0, TAU); ctx.fill();
+      }
+    }
+    // Side highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.fillRect(sx, 0, 4, gapY);
+    ctx.fillRect(sx, botY, 4, H - botY);
+  }
+
+  // ── Level 4 (Falling) state & logic ────────────────────────────────────────
+  let fallX = 0, fallWorldY = 0;
+  let fallHoldL = 0, fallHoldR = 0;  // touch counters
+
+  function startFalling() {
+    fallX = W * 0.5; fallWorldY = 0; fallHoldL = 0; fallHoldR = 0;
+    gstate = 'play'; score = 0;
+    cb.onStateChange('play'); cb.onScore(0); cb.onProgress(0);
+  }
+
+  function updateFalling(dt: number) {
+    fallWorldY += FALL_SPEED * dt;
+    const moveX = (fallHoldR > 0 ? 1 : 0) - (fallHoldL > 0 ? 1 : 0);
+    fallX += moveX * FALL_SIDE_SPD * dt;
+    fallX = Math.max(20, Math.min(W - 20, fallX));
+
+    const PW = 28, PH = 52;
+    const camY = Math.max(0, fallWorldY - H * 0.35);
+    const screenY = fallWorldY - camY;
+
+    // Obstacle collision
+    for (const o of FALL_OBS_DEFS) {
+      const osy = o.wy - camY;
+      if (osy + FALL_OBS_H < 0 || osy > H + 10) continue;
+      const gapX = o.gapFrac * W, gapW = o.gapWFrac * W;
+      if (screenY + PH > osy && screenY < osy + FALL_OBS_H) {
+        // Player collides unless in gap
+        const px1 = fallX - PW/2, px2 = fallX + PW/2;
+        if (!(px1 >= gapX && px2 <= gapX + gapW)) { loseGame(); return; }
+      }
+    }
+    score = FALL_OBS_DEFS.filter(o => o.wy < fallWorldY).length;
+    cb.onScore(score);
+    cb.onProgress(Math.min(1, fallWorldY / FALL_WIN_Y));
+    if (fallWorldY >= FALL_WIN_Y) winGame();
+  }
+
+  function drawFalling() {
+    const camY = Math.max(0, fallWorldY - H * 0.35);
+    // Sky
+    const sg = ctx.createLinearGradient(0, 0, 0, H);
+    sg.addColorStop(0, '#2a50a8'); sg.addColorStop(0.5, CLOUD_PAL.skyTop); sg.addColorStop(1, CLOUD_PAL.skyMid);
+    ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H);
+    // Background parallax clouds
+    for (const o of FALL_OBS_DEFS) {
+      const osy = o.wy * 0.3 - camY * 0.3;
+      if (osy < -60 || osy > H + 60) continue;
+      ctx.fillStyle = 'rgba(255,210,230,0.18)';
+      ctx.beginPath(); ctx.ellipse(o.gapFrac * W + W*0.2, osy, 90, 30, 0, 0, TAU); ctx.fill();
+    }
+    // Obstacles
+    for (const o of FALL_OBS_DEFS) {
+      const osy = o.wy - camY;
+      if (osy + FALL_OBS_H < -10 || osy > H + 10) continue;
+      drawFallingObstacle(osy, o.gapFrac * W, o.gapWFrac * W);
+    }
+    // Stage at bottom
+    if (fallWorldY > FALL_WIN_Y - H) {
+      const stageY = FALL_WIN_Y - camY;
+      ctx.fillStyle = CLOUD_PAL.platformMid; ctx.fillRect(0, stageY, W, H - stageY + 20);
+      // Mic stand
+      const mx = W * 0.55;
+      ctx.fillStyle = '#2a1828'; ctx.fillRect(mx-2, stageY - 120, 3, 120);
+      ctx.beginPath(); ctx.arc(mx, stageY - 125, 8, 0, TAU); ctx.fill();
+    }
+    // Player — falling pose (slight back tilt)
+    const playerSY = fallWorldY - camY;
+    ctx.save();
+    ctx.translate(fallX, playerSY);
+    ctx.rotate(0.08);
+    renderMissLi(ctx, 0, 0, 0.6, -0.5, true, false, custom);
+    ctx.restore();
+    // Left/right indicators
+    if (gstate === 'play') {
+      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      ctx.fillRect(0, 0, W/2, H);
+      if (fallHoldL > 0) { ctx.fillStyle = 'rgba(255,200,220,0.12)'; ctx.fillRect(0, 0, W/2, H); }
+      if (fallHoldR > 0) { ctx.fillStyle = 'rgba(255,200,220,0.12)'; ctx.fillRect(W/2, 0, W/2, H); }
+    }
+  }
+
+  function drawFallingObstacle(sy: number, gapX: number, gapW: number) {
+    const C1 = CLOUD_PAL.platformMid, C2 = CLOUD_PAL.platformSurf;
+    // Left block
+    if (gapX > 0) {
+      ctx.fillStyle = C1; ctx.fillRect(0, sy, gapX, FALL_OBS_H);
+      ctx.fillStyle = C2;
+      const n = Math.ceil(gapX / 28);
+      for (let i = 0; i < n; i++) {
+        const r = 16 + (i % 3) * 5;
+        ctx.beginPath(); ctx.arc((i + 0.5) * gapX / n, sy, r, 0, TAU); ctx.fill();
+      }
+    }
+    // Right block
+    const rx = gapX + gapW;
+    if (rx < W) {
+      ctx.fillStyle = C1; ctx.fillRect(rx, sy, W - rx, FALL_OBS_H);
+      ctx.fillStyle = C2;
+      const n = Math.ceil((W - rx) / 28);
+      for (let i = 0; i < n; i++) {
+        const r = 16 + (i % 3) * 5;
+        ctx.beginPath(); ctx.arc(rx + (i + 0.5) * (W - rx) / n, sy, r, 0, TAU); ctx.fill();
+      }
+    }
+    // White highlights
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.fillRect(0, sy, gapX, 3); ctx.fillRect(rx, sy, W-rx, 3);
+  }
+
   // ── Drawing ──
   // Draw order guarantees trees are ALWAYS rendered before ground/obstacles/player:
   // sky → sun → clouds → mountains → waterfalls → farTrees → midTrees → mist
   // → platforms → spikes → coins → stage → player → particles → foregroundGrass → vignette
 
   function draw() {
+    if (levelId === 3) { drawFlappy(); drawVignette(); return; }
+    if (levelId === 4) { drawFalling(); drawVignette(); return; }
     if (levelId === 1) {
       drawSky(); drawSun(); drawClouds(); drawMountains();
       drawWaterfalls();
@@ -1130,27 +1381,27 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
       ctx.ellipse(p.x + 4, sy + 11, p.r * 0.82, p.r * 0.3, 0, 0, TAU);
       ctx.fill();
     }
-    // Layer 1 — deepest blue-grey (gives cloud depth)
-    ctx.fillStyle = '#b4cadf';
+    // Layer 1 — deep rose (gives cloud depth)
+    ctx.fillStyle = '#f0b0c8';
     for (const p of puffs) {
       ctx.beginPath(); ctx.arc(p.x, sy - p.up, p.r, 0, TAU); ctx.fill();
     }
-    // Layer 2 — mid blue-white
-    ctx.fillStyle = '#d4e8f6';
+    // Layer 2 — medium pink
+    ctx.fillStyle = '#ffd9e6';
     for (const p of puffs) {
       ctx.beginPath(); ctx.arc(p.x, sy - p.up - 2, p.r * 0.88, 0, TAU); ctx.fill();
     }
-    // Layer 3 — light
-    ctx.fillStyle = '#eaf4ff';
+    // Layer 3 — light blush
+    ctx.fillStyle = '#ffe8f2';
     for (const p of puffs) {
       ctx.beginPath(); ctx.arc(p.x - 1, sy - p.up - 4, p.r * 0.74, 0, TAU); ctx.fill();
     }
-    // Layer 4 — near white
-    ctx.fillStyle = '#f4f9ff';
+    // Layer 4 — near white with pink tint
+    ctx.fillStyle = '#fff0f6';
     for (const p of puffs) {
       ctx.beginPath(); ctx.arc(p.x - 1, sy - p.up - 6, p.r * 0.60, 0, TAU); ctx.fill();
     }
-    // Layer 5 — pure white highlights at tops
+    // Layer 5 — pure white highlights
     ctx.fillStyle = 'rgba(255,255,255,0.96)';
     for (const p of puffs) {
       ctx.beginPath(); ctx.arc(p.x - 3, sy - p.up - p.r * 0.55, p.r * 0.36, 0, TAU); ctx.fill();
@@ -1238,25 +1489,55 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   function pressJump() {
     if (gstate === 'start') { startGame(); return; }
     if (gstate === 'lose' || gstate === 'win') { tries++; startGame(); return; }
-    if (gstate !== 'play' || !player.alive) return;
+    if (gstate !== 'play') return;
+    if (levelId === 3) { flVY = FL_FLAP_V; return; }
+    if (levelId === 4) return; // falling mode uses pointerDown with position
+    if (!player.alive) return;
     if (player.jumps < 2) {
       player.vy = player.jumps === 0 ? JUMP_VEL : JUMP_VEL * 0.86;
       if (player.jumps === 1) {
-        // Double jump: trigger somersault + puff
         spawnPuff(screenX(player.x), screenY(player.y, true));
-        player.flipping = true;
-        player.flipT = 0;
+        player.flipping = true; player.flipT = 0;
       }
       player.onGround = false; player.holding = true; player.holdTime = 0; player.jumps++;
     }
   }
 
-  function releaseJump() { player.holding = false; }
+  function releaseJump() {
+    if (levelId <= 2) {
+      if (player.vy < 0 && player.holding) {
+        const t = Math.min(1, player.holdTime / MAX_HOLD);
+        player.vy *= JUMP_CUT_MIN + (1 - JUMP_CUT_MIN) * t;
+      }
+      player.holding = false;
+    }
+  }
+
+  function pointerDown(x: number, y: number) {
+    if (gstate === 'start') { startGame(); return; }
+    if (gstate === 'lose' || gstate === 'win') { tries++; startGame(); return; }
+    if (gstate !== 'play') return;
+    if (levelId === 3) { flVY = FL_FLAP_V; return; }
+    if (levelId === 4) {
+      if (x < W / 2) fallHoldL++; else fallHoldR++;
+      return;
+    }
+    pressJump();
+  }
+
+  function pointerUp(x: number, y: number) {
+    if (levelId === 4) {
+      if (x < W / 2) fallHoldL = Math.max(0, fallHoldL - 1);
+      else            fallHoldR = Math.max(0, fallHoldR - 1);
+    } else {
+      releaseJump();
+    }
+  }
 
   function destroy() {
     cancelAnimationFrame(rafId);
     window.removeEventListener('resize', resize);
   }
 
-  return { pressJump, releaseJump, destroy };
+  return { pressJump, releaseJump, pointerDown, pointerUp, destroy };
 }
