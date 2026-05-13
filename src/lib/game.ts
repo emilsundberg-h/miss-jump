@@ -304,6 +304,47 @@ function buildCloudScenery(): Scenery {
 }
 const CLOUD_SCENERY = buildCloudScenery();
 
+// ===== Level 4 runner phase — cloud platforms before the fall =====
+const FALL4_PLATFORMS: PlatformDef[] = [
+  { x: 0,    w: 500,  y: 0 },
+  { x: 680,  w: 130,  y: 70 },
+  { x: 900,  w: 120,  y: 170 },
+  { x: 1110, w: 100,  y: 70 },
+  { x: 1310, w: 140,  y: 180, spikes: [{ ox: 50, n: 2 }] },
+  { x: 1570, w: 100,  y: 80 },
+  { x: 1780, w: 110,  y: 190 },
+  { x: 2000, w: 90,   y: 80 },
+  { x: 2200, w: 100,  y: 190 },
+  { x: 2410, w: 90,   y: 80 },
+  // No more platforms after x=2500 — player walks off the edge
+];
+const FALL4_RUN_END = 2500; // world x where runner section ends
+
+const FALL4_SPIKE_DEFS: SpikePos[] = [];
+for (const p of FALL4_PLATFORMS) {
+  if (!p.spikes) continue;
+  for (const s of p.spikes)
+    for (let i = 0; i < s.n; i++)
+      FALL4_SPIKE_DEFS.push({ x: p.x + s.ox + i * SPIKE_W, y: p.y });
+}
+
+const FALL4_COIN_DEFS: CoinDef[] = [];
+(function placeFall4Coins() {
+  for (const p of FALL4_PLATFORMS) {
+    const count = Math.max(1, Math.floor(p.w / 160));
+    for (let i = 0; i < count; i++) {
+      const cx = p.x + 40 + (p.w - 80) * (i + 0.5) / count;
+      const cy = p.y + 110 + (i % 2) * 30;
+      let blocked = false;
+      if (p.spikes)
+        for (const s of p.spikes)
+          for (let k = 0; k < s.n; k++)
+            if (Math.abs(cx - (p.x + s.ox + k * SPIKE_W + SPIKE_W / 2)) < 30) blocked = true;
+      if (!blocked) FALL4_COIN_DEFS.push({ x: cx, y: cy, t: Math.random() * TAU });
+    }
+  }
+})();
+
 // ===== Character customisation =====
 export interface CharCustom {
   hair: string; hairMid: string; hairHi: string;
@@ -540,9 +581,9 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   const groundY = () => H * 0.78;
 
   // Level-specific data (local vars shadow module-level constants where names differ)
-  const platforms    = levelId === 1 ? PLATFORMS         : CLOUD_PLATFORMS;
-  const spikeDefs    = levelId === 1 ? SPIKE_DEFS        : CLOUD_SPIKE_DEFS;
-  const levelCoinDefs = levelId === 1 ? COIN_DEFS        : CLOUD_COIN_DEFS;
+  const platforms    = levelId === 1 ? PLATFORMS    : levelId === 4 ? FALL4_PLATFORMS    : CLOUD_PLATFORMS;
+  const spikeDefs    = levelId === 1 ? SPIKE_DEFS   : levelId === 4 ? FALL4_SPIKE_DEFS   : CLOUD_SPIKE_DEFS;
+  const levelCoinDefs = levelId === 1 ? COIN_DEFS   : levelId === 4 ? FALL4_COIN_DEFS    : CLOUD_COIN_DEFS;
   const scenery      = levelId === 1 ? SCENERY           : CLOUD_SCENERY;
   const stageStart   = levelId === 1 ? STAGE_START       : CLOUD_STAGE_START;
   const finishX      = levelId === 1 ? FINISH_X          : CLOUD_FINISH_X;
@@ -578,7 +619,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   // ── State transitions ──
   function startGame() {
     if (levelId === 3) { startFlappy(); return; }
-    if (levelId === 4) { startFalling(); return; }
+    if (levelId === 4) { startFall4(); return; }
     gstate = 'play'; score = 0;
     player.x = 120; player.y = 0; player.vx = MOVE_SPEED; player.vy = 0;
     player.onGround = true; player.jumps = 0; player.alive = true;
@@ -611,7 +652,8 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   // ── Update ──
   function update(dt: number) {
     if (levelId === 3) { if (gstate === 'play') updateFlappy(dt); return; }
-    if (levelId === 4) { if (gstate === 'play') updateFalling(dt); return; }
+    if (levelId === 4 && fall4Phase === 'fall') { if (gstate === 'play') updateFalling(dt); return; }
+    // Level 4 runner phase falls through to the normal platform runner below
     if (gstate === 'play') {
       // Speed ramps up progressively with distance (1× → 2× over the level)
       const speedMul = Math.min(2.0, 1.0 + player.x / 7000);
@@ -640,8 +682,11 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
         }
       } else { player.onGround = false; }
 
-      // Die quickly when falling into a gap (80px below ground baseline)
-      if (player.y < -80) { loseGame(); return; }
+      // Level 4: walking off the last cloud → switch to fall phase instead of dying
+      if (player.y < -80) {
+        if (levelId === 4 && player.x > FALL4_RUN_END - 150) { switchToFallPhase(); return; }
+        loseGame(); return;
+      }
 
       // Spike collision
       for (const s of spikeDefs) {
@@ -992,10 +1037,37 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   }
 
   // ── Level 4 (Falling) state & logic ────────────────────────────────────────
+  let fall4Phase: 'run' | 'fall' = 'run';
   let fallX = 0, fallWorldY = 0;
-  let fallHoldL = 0, fallHoldR = 0;  // touch counters
+  let fallHoldL = 0, fallHoldR = 0;
 
-  function startFalling() {
+  function startFall4() {
+    // Phase 1: platform runner (same init as levels 1&2)
+    fall4Phase = 'run';
+    gstate = 'play'; score = 0;
+    player.x = 120; player.y = 0; player.vx = MOVE_SPEED; player.vy = 0;
+    player.onGround = true; player.jumps = 0; player.alive = true;
+    player.winning = false; player.winT = 0; player.flipping = false; player.flipT = 0;
+    camX = 0; fallHoldL = 0; fallHoldR = 0;
+    coins = levelCoinDefs.map(c => ({ ...c, collected: false }));
+    particles = [];
+    cb.onStateChange('play'); cb.onScore(0); cb.onProgress(0);
+  }
+
+  function switchToFallPhase() {
+    // Preserve horizontal screen position when transitioning
+    fall4Phase = 'fall';
+    fallX = Math.max(60, Math.min(W - 60, player.x - camX));
+    fallWorldY = 0; fallHoldL = 0; fallHoldR = 0;
+    // Burst of particles to signal transition
+    for (let i = 0; i < 18; i++) particles.push({
+      x: player.x - camX, y: screenY(player.y, true) + 20,
+      vx: (Math.random() - 0.5) * 300, vy: -Math.random() * 200 - 50,
+      life: 0.8, color: CLOUD_PAL.platformSurf, size: 4 + Math.random() * 5,
+    });
+  }
+
+  function startFalling() {  // kept for direct call from startFall4 retry
     fallX = W * 0.5; fallWorldY = 0; fallHoldL = 0; fallHoldR = 0;
     gstate = 'play'; score = 0;
     cb.onStateChange('play'); cb.onScore(0); cb.onProgress(0);
@@ -1030,6 +1102,57 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     cb.onScore(score);
     cb.onProgress(Math.min(1, fallWorldY / FALL_WIN_Y));
     if (fallWorldY >= FALL_WIN_Y) winGame();
+  }
+
+  function drawFall4Runner() {
+    // Identical visual style to Level 2 (pink cloud palette) but uses FALL4 platforms.
+    // Sky darkens and stars appear as player approaches the edge of the clouds.
+    const edgeApproach = Math.max(0, (player.x - (FALL4_RUN_END - 800)) / 800); // 0→1
+
+    drawCloudSky();
+    drawCloudBackground();
+
+    // Stars fading in as the edge approaches
+    if (edgeApproach > 0.2) {
+      ctx.fillStyle = `rgba(255,255,240,${(edgeApproach - 0.2) * 0.7})`;
+      const stars = [[W*0.1,H*0.08],[W*0.3,H*0.04],[W*0.55,H*0.12],[W*0.72,H*0.06],[W*0.88,H*0.09],[W*0.42,H*0.02]];
+      for (const [sx,sy] of stars) { ctx.beginPath(); ctx.arc(sx,sy,2.5,0,TAU); ctx.fill(); }
+    }
+
+    // Darkness vignette approaching the edge
+    if (edgeApproach > 0) {
+      const dg = ctx.createLinearGradient(0,0,W,0);
+      dg.addColorStop(0,'rgba(0,0,0,0)');
+      dg.addColorStop(1,`rgba(10,4,20,${edgeApproach*0.55})`);
+      ctx.fillStyle = dg; ctx.fillRect(0,0,W,H);
+    }
+
+    drawCloudMist();
+
+    // Platforms as fluffy clouds
+    const gy = groundY();
+    for (const p of platforms) {
+      const sx = p.x - camX, sy = gy - p.y;
+      if (sx + p.w < -20 || sx > W + 20) continue;
+      drawCloudShape(sx, sy, p.w);
+    }
+    drawSpikes();
+    drawCoins();
+    if (gstate !== 'start') drawPlayer();
+    drawParticles();
+
+    // "Edge of clouds" warning text
+    if (edgeApproach > 0.5) {
+      ctx.save();
+      ctx.globalAlpha = (edgeApproach - 0.5) * 1.6;
+      ctx.fillStyle = '#fff0f6';
+      ctx.font = 'bold 15px "Inter", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Molnen tar slut…', W/2, H * 0.14);
+      ctx.restore();
+    }
+
+    drawVignette();
   }
 
   function drawFalling() {
@@ -1161,6 +1284,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
 
   function draw() {
     if (levelId === 3) { drawFlappy(); drawVignette(); return; }
+    if (levelId === 4 && fall4Phase === 'run') { drawFall4Runner(); return; }
     if (levelId === 4) { drawFalling(); drawVignette(); return; }
     if (levelId === 1) {
       drawSky(); drawSun(); drawClouds(); drawMountains();
@@ -1340,7 +1464,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
 
   function drawSpikes() {
     const gy = groundY();
-    const isCloud = levelId === 2;
+    const isCloud = levelId === 2 || (levelId === 4 && fall4Phase === 'run');
     for (const s of spikeDefs) {
       const sx = s.x - camX, sy = gy - s.y;
       if (sx + SPIKE_W < -10 || sx > W + 10) continue;

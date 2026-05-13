@@ -78,11 +78,12 @@ export default function Game() {
     if (!levelId) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
-    setState("start"); setScore(0); setProgress(0); setWinData(null);
+    setState("start"); setScore(0); setProgress(0); setWinData(null); setTries(1);
     const ctrl = createGame(canvas, {
       onStateChange: (s, data) => {
         setState(s);
         if (s === "play") { setTapHint(true); setTimeout(() => setTapHint(false), 3000); }
+        if (data?.tries) setTries(data.tries);
         if (s === "win" && data) setWinData({ score: data.score ?? 0, tries: data.tries ?? 1 });
       },
       onProgress: pct => setProgress(pct),
@@ -251,10 +252,15 @@ export default function Game() {
         <TitleCard>
           <div style={{ fontSize: 44, marginBottom: 6 }}>🎤</div>
           <Eyebrow>Tappade taktkänslan</Eyebrow>
-          <BigTitle style={{ fontSize: "clamp(36px,5vw,60px)" }}>Tagning två?</BigTitle>
+          <BigTitle style={{ fontSize: "clamp(36px,5vw,60px)" }}>Tagning {tries + 1}?</BigTitle>
           <Subtitle>Publiken väntar fortfarande. Ta sats igen.</Subtitle>
+          <div style={{ margin: "4px 0 18px" }}>
+            <Stat label="Försök" value={String(tries)} />
+          </div>
           <Cta onClick={pressJump}>Försök igen <Key>SPACE</Key></Cta>
-          <BackLink onClick={() => setLevelId(null)}>← Byt bana</BackLink>
+          <div onClick={e => e.stopPropagation()}>
+            <BackLink onClick={() => setLevelId(null)}>← Byt bana</BackLink>
+          </div>
         </TitleCard>
       </Overlay>
 
