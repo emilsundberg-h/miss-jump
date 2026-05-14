@@ -94,15 +94,26 @@ export default function Game() {
   const [muted,    setMuted]    = useState(false);
   const [easy,     setEasy]     = useState(false);
   const [tiltOk,   setTiltOk]   = useState(() => { try { return localStorage.getItem('mj_tilt') === 'granted'; } catch { return false; } });
+  const [useTilt,  setUseTilt]  = useState(false);
 
-  // Device orientation → tilt (level 7)
+  // Device orientation → tilt (level 7, landscape-aware)
   useEffect(() => {
-    if (!tiltOk) return;
-    // beta = front/back tilt: negative = top edge up = ball lifts
-    const handler = (e: DeviceOrientationEvent) => controlRef.current?.setTilt(e.gamma ?? 0);
+    if (!tiltOk || !useTilt) return;
+    const handler = (e: DeviceOrientationEvent) => {
+      // Compensate for landscape orientation: gamma is ~±90° when held horizontally,
+      // so use beta (the axis that reflects left/right tilt in landscape).
+      const angle = (typeof screen?.orientation?.angle !== 'undefined'
+        ? screen.orientation.angle
+        : (window as any).orientation ?? 0) as number;
+      let tilt: number;
+      if (angle === 90)              tilt = -(e.beta  ?? 0); // landscape: home right
+      else if (angle === -90 || angle === 270) tilt =  (e.beta  ?? 0); // landscape: home left
+      else                           tilt =  (e.gamma ?? 0); // portrait
+      controlRef.current?.setTilt(tilt);
+    };
     window.addEventListener('deviceorientation', handler);
     return () => window.removeEventListener('deviceorientation', handler);
-  }, [tiltOk]);
+  }, [tiltOk, useTilt]);
 
   const requestTilt = useCallback(async () => {
     if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
@@ -238,7 +249,7 @@ export default function Game() {
 
       {tapHint && (
         <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", color: "rgba(255,255,255,0.7)", fontSize: 12, letterSpacing: "0.2em", textTransform: "uppercase", background: "rgba(20,14,26,0.4)", padding: "8px 16px", borderRadius: 99, backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", pointerEvents: "none", zIndex: 3 }}>
-          {levelId === 7 ? "Tryck vänster · höger för att styra · luta för tilt" : "Tap or press space to jump · hold for higher jump"}
+          {levelId === 7 ? (useTilt ? "Luta vänster / höger för att styra" : "Tryck vänster · höger halva för att styra") : "Tap or press space to jump · hold for higher jump"}
         </div>
       )}
 
@@ -362,21 +373,12 @@ export default function Game() {
             ? "Roller-skate the fairground. Tap to jump. Dodge cotton candy, ice cream and popcorn. It gets faster and faster!"
             : "Walk Miss Li into the glowing hole in the forest floor. She'll roll into a ball — then steer left and right to fall through the gaps before the platforms push you off the top!"
           }</Subtitle>
-          <Cta onClick={pressJump}>Start the Show <Key>SPACE</Key></Cta>
-          {levelId === 7 && !tiltOk && (
-            <div onClick={e => e.stopPropagation()} style={{ marginTop: 10 }}>
-              <button
-                onClick={() => requestTilt()}
-                style={{
-                  background: "rgba(31,14,38,0.08)", border: "1.5px solid rgba(31,14,38,0.22)",
-                  borderRadius: 99, padding: "8px 18px", cursor: "pointer",
-                  fontSize: 13, color: "#6040a0", fontWeight: 600, letterSpacing: "0.04em",
-                }}
-              >
-                📱 Aktivera tiltstyrning (iPhone)
-              </button>
+          {levelId === 7 && (
+            <div onClick={e => e.stopPropagation()} style={{ marginBottom: 14 }}>
+              <TiltToggle useTilt={useTilt} onToggle={v => { if (v && !tiltOk) requestTilt().then(() => setUseTilt(true)); else setUseTilt(v); }} />
             </div>
           )}
+          <Cta onClick={pressJump}>Start the Show <Key>SPACE</Key></Cta>
           <div onClick={e => e.stopPropagation()}>
             <BackLink onClick={() => setLevelId(null)}>← Change Level</BackLink>
           </div>
@@ -393,6 +395,11 @@ export default function Game() {
           <div style={{ margin: "4px 0 18px" }}>
             <Stat label="Attempts" value={String(tries)} />
           </div>
+          {levelId === 7 && (
+            <div onClick={e => e.stopPropagation()} style={{ marginBottom: 14 }}>
+              <TiltToggle useTilt={useTilt} onToggle={v => { if (v && !tiltOk) requestTilt().then(() => setUseTilt(true)); else setUseTilt(v); }} />
+            </div>
+          )}
           <Cta onClick={pressJump}>Try Again <Key>SPACE</Key></Cta>
           <div onClick={e => e.stopPropagation()} style={{ marginTop: 10 }}>
             <DebugCopyRow
@@ -712,6 +719,28 @@ function HudCard({ label, value, progress }: { label: string; value?: string; pr
           <div style={{ height: "100%", width: `${(progress*100).toFixed(1)}%`, background: "linear-gradient(90deg,#ffb86b 0%,#ff6f9c 50%,#c46cff 100%)", borderRadius: 99, transition: "width 0.12s linear" }} />
         </div>
       )}
+    </div>
+  );
+}
+
+function TiltToggle({ useTilt, onToggle }: { useTilt: boolean; onToggle: (v: boolean) => void }) {
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ fontSize: 11, color: "rgba(31,14,38,0.55)", marginBottom: 6, letterSpacing: "0.08em", textTransform: "uppercase" }}>Styrning</div>
+      <div style={{ display: "inline-flex", background: "rgba(0,0,0,0.10)", borderRadius: 99, padding: 3, gap: 3 }}>
+        <button onClick={() => onToggle(false)} style={{
+          padding: "7px 18px", borderRadius: 99, border: "none", cursor: "pointer",
+          fontWeight: 700, fontSize: 12, letterSpacing: "0.04em", transition: "all 0.15s",
+          background: !useTilt ? "#1f0e26" : "transparent",
+          color: !useTilt ? "#fff" : "rgba(31,14,38,0.50)",
+        }}>Tryck</button>
+        <button onClick={() => onToggle(true)} style={{
+          padding: "7px 18px", borderRadius: 99, border: "none", cursor: "pointer",
+          fontWeight: 700, fontSize: 12, letterSpacing: "0.04em", transition: "all 0.15s",
+          background: useTilt ? "#1f0e26" : "transparent",
+          color: useTilt ? "#fff" : "rgba(31,14,38,0.50)",
+        }}>📱 Tilt</button>
+      </div>
     </div>
   );
 }
