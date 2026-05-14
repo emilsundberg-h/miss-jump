@@ -33,11 +33,21 @@ function useMusic() {
     }, 100);
   }, []);
 
+  const muted = useRef(false);
+
+  const toggleMute = useCallback(() => {
+    muted.current = !muted.current;
+    const a = audio.current;
+    if (a) a.muted = muted.current;
+    return muted.current;
+  }, []);
+
   const start = useCallback(() => {
     if (audio.current) return;
     const a = new Audio("/bg-music.mp3");
     a.loop = true;
     a.volume = 0;
+    a.muted = muted.current;
     a.play().catch(() => {});
     audio.current = a;
     setVol(VOL.menu);
@@ -57,7 +67,7 @@ function useMusic() {
       audio.current?.pause();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  return { start, setVol };
+  return { start, setVol, toggleMute };
 }
 
 export default function Game() {
@@ -81,6 +91,7 @@ export default function Game() {
   const [tries,    setTries]    = useState(1);
   const [tapHint,  setTapHint]  = useState(false);
   const [copied,   setCopied]   = useState(false);
+  const [muted,    setMuted]    = useState(false);
 
   // Persist character customisation
   useEffect(() => {
@@ -176,8 +187,25 @@ export default function Game() {
           visibility: levelId ? "visible" : "hidden" }}
       />
 
+      {/* ── Mute button — always visible ── */}
+      <button
+        onClick={() => setMuted(music.toggleMute())}
+        style={{
+          position: "fixed", top: 14, right: 14, zIndex: 20,
+          width: 36, height: 36, borderRadius: "50%",
+          background: "rgba(20,14,26,0.55)", backdropFilter: "blur(8px)",
+          border: "1px solid rgba(255,255,255,0.15)",
+          color: "#f7efe2", fontSize: 16, cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+        }}
+        title={muted ? "Unmute" : "Mute"}
+      >
+        {muted ? "🔇" : "🔊"}
+      </button>
+
       {isPlaying && levelId && (
-        <div style={{ position: "fixed", top: 18, left: 18, right: 18, display: "flex", justifyContent: "space-between", alignItems: "flex-start", pointerEvents: "none", zIndex: 5 }}>
+        <div style={{ position: "fixed", top: 18, left: 18, right: 62, display: "flex", justifyContent: "space-between", alignItems: "flex-start", pointerEvents: "none", zIndex: 5 }}>
           <HudCard label="Spotlight" value={String(score)} />
           <HudCard label="To the Stage" progress={progress} />
         </div>

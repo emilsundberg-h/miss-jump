@@ -1223,13 +1223,14 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   let l6PVY     = 0;      // vertical velocity (negative = moving up)
   let l6Holding = false;
   let l6HoldT   = 0;
+  let l6Jumps   = 0;      // jump count (0=ground, 1=first, 2=double)
   let l6RunT    = 0;
   let l6Obs: L6Obs[] = [];
   let l6NextGap = 800;    // px until next obstacle spawns
 
   function startL6() {
     l6Dist = 0; l6Speed = L6_BASE_SPD;
-    l6PY = 0; l6PVY = 0; l6Holding = false; l6HoldT = 0; l6RunT = 0;
+    l6PY = 0; l6PVY = 0; l6Holding = false; l6HoldT = 0; l6RunT = 0; l6Jumps = 0;
     l6Obs = []; l6NextGap = 900 + Math.random() * 600;
     score = 0; gstate = 'play';
     cb.onStateChange('play'); cb.onScore(0); cb.onProgress(0);
@@ -1237,9 +1238,9 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
 
   function l6Jump() {
     if (gstate !== 'play') return;
-    if (l6PY > 2) return; // already in air
-    l6PVY = L6_JUMP_VEL;
-    l6Holding = true; l6HoldT = 0;
+    if (l6Jumps >= 2) return; // max double jump
+    l6PVY = l6Jumps === 0 ? L6_JUMP_VEL : L6_JUMP_VEL * 0.86;
+    l6Holding = true; l6HoldT = 0; l6Jumps++;
   }
 
   function l6ReleaseJump() {
@@ -1261,7 +1262,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     }
     l6PVY += L6_GRAVITY * dt;
     l6PY  -= l6PVY * dt;
-    if (l6PY <= 0) { l6PY = 0; l6PVY = 0; l6Holding = false; }
+    if (l6PY <= 0) { l6PY = 0; l6PVY = 0; l6Holding = false; l6Jumps = 0; }
 
     // Scroll obstacles
     for (const o of l6Obs) o.x -= l6Speed * dt;
