@@ -15,6 +15,7 @@ export interface GameControls {
   pointerDown: (x: number, y: number) => void;
   pointerUp:   (x: number, y: number) => void;
   setJoystick: (dx: number, dy: number) => void;
+  setTilt:     (gamma: number) => void;
   destroy: () => void;
 }
 
@@ -85,6 +86,34 @@ const L6_MAX_SPD    = 820;   // cap px/s
 const L6_WIN_DIST   = 45000; // px — displayed as 4500 m
 const L6_GROUND_F   = 0.82;  // groundY = H * L6_GROUND_F
 const L6_PLAYER_XF  = 0.18;  // fixed player screen-X fraction
+
+// ── Level 7: Pinball — tilt ball through neon barriers ─────────────────────
+const L7_BALL_R      = 26;
+const L7_BLOCK_H     = 46;
+const L7_BASE_SPD    = 230;  // px/s scroll
+const L7_MAX_SPD     = 600;
+const L7_WIN_DIST    = 28000;
+const L7_BALL_YF     = 0.30;  // ball fixed screen-Y fraction
+const L7_TILT_FORCE  = 950;   // lateral acceleration (px/s²) per 90° tilt
+const L7_FRICTION    = 0.87;  // per-frame lateral friction
+
+const L7_BLOCK_DEFS: { wy: number; gapFrac: number; gapWFrac: number }[] = (() => {
+  const list: { wy: number; gapFrac: number; gapWFrac: number }[] = [];
+  let s = 13572468;
+  const r = () => { s = (s * 1664525 + 1013904223) >>> 0; return (s >>> 0) / 4294967296; };
+  const REACH = 0.24;
+  let prevGL = 0.32, prevGR = 0.68;
+  for (let y = 380; y < L7_WIN_DIST + 400; y += 260 + r() * 130) {
+    const hw   = 0.12 + r() * 0.06;
+    const rawC = 0.18 + r() * 0.64;
+    const centre = Math.max(prevGR - REACH - hw, Math.min(prevGL + REACH + hw, rawC));
+    const gL = Math.max(0.04, centre - hw);
+    const gR = Math.min(0.96, centre + hw);
+    prevGL = gL; prevGR = gR;
+    list.push({ wy: y, gapFrac: gL, gapWFrac: gR - gL });
+  }
+  return list;
+})();
 
 const TAU = Math.PI * 2;
 
@@ -606,7 +635,7 @@ function renderMissLi(
 }
 
 // ===== Main factory =====
-export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId: 1|2|3|4|5|6 = 1, custom: CharCustom = DEFAULT_CUSTOM, easy = false): GameControls {
+export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId: 1|2|3|4|5|6|7 = 1, custom: CharCustom = DEFAULT_CUSTOM, easy = false): GameControls {
   const ctx = canvas.getContext('2d')!;
   let DPR = 1, W = 0, H = 0;
 
@@ -667,6 +696,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (levelId === 4) { startFall4(); return; }
     if (levelId === 5) { startLevel5(); return; }
     if (levelId === 6) { startL6(); return; }
+    if (levelId === 7) { startL7(); return; }
     gstate = 'play'; score = 0;
     player.x = 120; player.y = 0; player.vx = MOVE_SPEED; player.vy = 0;
     player.onGround = true; player.jumps = 0; player.alive = true;
@@ -702,6 +732,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (levelId === 4 && fall4Phase === 'fall') { if (gstate === 'play') updateFalling(dt); return; }
     if (levelId === 5) { if (gstate === 'play') updateLevel5(dt); return; }
     if (levelId === 6) { if (gstate === 'play') updateL6(dt); return; }
+    if (levelId === 7) { if (gstate === 'play') updateL7(dt); return; }
     // Level 4 runner phase falls through to the normal platform runner below
     if (gstate === 'play') {
       // Speed ramps up progressively with distance (1× → 2× over the level)
@@ -1715,6 +1746,217 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     ctx.restore();
   }
 
+  // ── Level 7: Pinball — tilt ball through neon barriers ─────────────────────
+  let l7WorldY  = 0;
+  let l7Speed   = L7_BASE_SPD;
+  let l7BallX   = 0;
+  let l7BallVX  = 0;
+  let l7Tilt    = 0;   // gamma degrees from DeviceOrientation
+
+  function startL7() {
+    l7WorldY = 0; l7Speed = L7_BASE_SPD;
+    l7BallX = W / 2; l7BallVX = 0; l7Tilt = 0;
+    score = 0; gstate = 'play';
+    cb.onStateChange('play'); cb.onScore(0); cb.onProgress(0);
+  }
+
+  function updateL7(dt: number) {
+    l7Speed = Math.min(L7_MAX_SPD, L7_BASE_SPD + l7WorldY / 35);
+    l7WorldY += l7Speed * dt;
+
+    // Lateral physics from tilt (dead zone ±4°)
+    const tiltForce = Math.abs(l7Tilt) < 4 ? 0 : (l7Tilt / 90) * L7_TILT_FORCE;
+    l7BallVX += tiltForce * dt;
+    l7BallVX *= Math.pow(L7_FRICTION, dt * 60);
+    l7BallX  += l7BallVX * dt;
+
+    // Wall bounce
+    if (l7BallX - L7_BALL_R < 0)  { l7BallX = L7_BALL_R;      l7BallVX = Math.abs(l7BallVX) * 0.55; }
+    if (l7BallX + L7_BALL_R > W)  { l7BallX = W - L7_BALL_R;  l7BallVX = -Math.abs(l7BallVX) * 0.55; }
+
+    // Block collision
+    const ballWorldY = l7WorldY + H * L7_BALL_YF;
+    for (const b of L7_BLOCK_DEFS) {
+      const top = b.wy, bot = b.wy + L7_BLOCK_H;
+      if (ballWorldY + L7_BALL_R * 0.7 < top || ballWorldY - L7_BALL_R * 0.7 > bot) continue;
+      const gapL = b.gapFrac * W, gapR = (b.gapFrac + b.gapWFrac) * W;
+      if (l7BallX - L7_BALL_R * 0.65 < gapL || l7BallX + L7_BALL_R * 0.65 > gapR) {
+        loseGame(); return;
+      }
+    }
+
+    // Crushing floor (rises; if ball's screen Y goes below danger threshold → die)
+    const floorRise = Math.min(H * 0.40, l7WorldY * 0.015);
+    const floorScreenY = H - floorRise;
+    if (H * L7_BALL_YF + L7_BALL_R > floorScreenY) { loseGame(); return; }
+
+    score = Math.floor(l7WorldY / 10);
+    cb.onScore(score);
+    cb.onProgress(Math.min(1, l7WorldY / L7_WIN_DIST));
+    if (l7WorldY >= L7_WIN_DIST) winGame();
+  }
+
+  function drawL7() {
+    const t = performance.now() / 1000;
+
+    // Dark neon bg
+    ctx.fillStyle = '#06040e'; ctx.fillRect(0, 0, W, H);
+
+    // Scrolling hex-grid (subtle neon pink lines)
+    const gs = 70;
+    ctx.strokeStyle = 'rgba(200,40,100,0.07)'; ctx.lineWidth = 1;
+    const gridOffY = l7WorldY % gs;
+    for (let gx = 0; gx <= W; gx += gs) {
+      ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke();
+    }
+    for (let gy = -gridOffY; gy < H + gs; gy += gs) {
+      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
+    }
+
+    // Blocks
+    const ballWorldY = l7WorldY + H * L7_BALL_YF;
+    for (const b of L7_BLOCK_DEFS) {
+      const sY = b.wy - l7WorldY;
+      if (sY + L7_BLOCK_H < -30 || sY > H + 30) continue;
+      const gapL = b.gapFrac * W, gapW = b.gapWFrac * W;
+      const dist  = Math.abs(b.wy - ballWorldY);
+      const hot   = dist < 260;
+
+      // Block fill
+      ctx.fillStyle = '#140820';
+      if (gapL > 0)         ctx.fillRect(0,          sY, gapL,          L7_BLOCK_H);
+      if (W - gapL - gapW > 0) ctx.fillRect(gapL + gapW, sY, W - gapL - gapW, L7_BLOCK_H);
+
+      // Neon top-edge glow
+      const neon = hot ? '#ff2060' : '#8a1040';
+      ctx.shadowBlur = hot ? 18 : 8; ctx.shadowColor = neon;
+      ctx.strokeStyle = neon; ctx.lineWidth = 2;
+      ctx.beginPath();
+      if (gapL > 0)         { ctx.moveTo(0, sY);          ctx.lineTo(gapL, sY); }
+      if (W - gapL - gapW > 0) { ctx.moveTo(gapL + gapW, sY); ctx.lineTo(W, sY); }
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Gap safe-zone glow (cyan)
+      const gg = ctx.createLinearGradient(gapL, 0, gapL + gapW, 0);
+      gg.addColorStop(0, 'rgba(60,200,255,0)');
+      gg.addColorStop(0.5, hot ? 'rgba(60,200,255,0.14)' : 'rgba(60,200,255,0.07)');
+      gg.addColorStop(1, 'rgba(60,200,255,0)');
+      ctx.fillStyle = gg; ctx.fillRect(gapL, sY, gapW, L7_BLOCK_H);
+
+      // Gap edge lines
+      ctx.strokeStyle = 'rgba(60,200,255,0.35)'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(gapL,          sY); ctx.lineTo(gapL,          sY + L7_BLOCK_H);
+      ctx.moveTo(gapL + gapW,   sY); ctx.lineTo(gapL + gapW,   sY + L7_BLOCK_H);
+      ctx.stroke();
+
+      // Particle sparks on edges (when near)
+      if (hot && Math.random() < 0.3) {
+        const sx2 = Math.random() < 0.5 ? gapL : gapL + gapW;
+        ctx.fillStyle = '#ff6090'; ctx.globalAlpha = 0.7;
+        ctx.fillRect(sx2 + (Math.random()-0.5)*6, sY + Math.random()*L7_BLOCK_H, 2, 2);
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // Rising danger floor
+    const floorRise = Math.min(H * 0.40, l7WorldY * 0.015);
+    const floorY = H - floorRise;
+    const fg = ctx.createLinearGradient(0, floorY - 60, 0, floorY);
+    fg.addColorStop(0, 'rgba(255,20,60,0)');
+    fg.addColorStop(1, 'rgba(255,20,60,0.42)');
+    ctx.fillStyle = fg; ctx.fillRect(0, floorY - 60, W, 60);
+    ctx.fillStyle = '#c0103a'; ctx.fillRect(0, floorY, W, H - floorY);
+    ctx.shadowBlur = 16; ctx.shadowColor = '#ff2050';
+    ctx.strokeStyle = '#ff3060'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, floorY); ctx.lineTo(W, floorY); ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Ball
+    drawL7Ball(l7BallX, H * L7_BALL_YF);
+
+    // Speed lines (when fast)
+    if (l7Speed > 360) {
+      const a = Math.min(0.22, (l7Speed - 360) / 1400);
+      ctx.strokeStyle = `rgba(255,80,160,${a})`;
+      ctx.lineWidth = 1; ctx.lineCap = 'round';
+      for (let i = 0; i < 9; i++) {
+        const lx = ((i * 149 + l7WorldY * 0.6) % (W + 40) + W + 40) % (W + 40) - 20;
+        const ly = H * 0.05 + i * H * 0.10;
+        const ll = 18 + i * 7;
+        ctx.globalAlpha = a * (0.5 + Math.sin(t * 3 + i) * 0.3);
+        ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(lx + ll, ly); ctx.stroke();
+      }
+      ctx.globalAlpha = 1; ctx.lineCap = 'butt';
+    }
+
+    // Vignette
+    const vg = ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.3, W/2,H/2,Math.max(W,H)*0.80);
+    vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(6,4,14,0.60)');
+    ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+  }
+
+  function drawL7Ball(x: number, y: number) {
+    const r = L7_BALL_R;
+
+    // Outer glow
+    const og = ctx.createRadialGradient(x, y, 0, x, y, r * 2.8);
+    og.addColorStop(0, 'rgba(255,111,156,0.35)');
+    og.addColorStop(1, 'rgba(255,111,156,0)');
+    ctx.fillStyle = og; ctx.fillRect(x-r*3, y-r*3, r*6, r*6);
+
+    // Main sphere gradient
+    const sg = ctx.createRadialGradient(x-r*0.32, y-r*0.32, 0, x, y, r);
+    sg.addColorStop(0, '#ffd8ea');
+    sg.addColorStop(0.42, '#ff6f9c');
+    sg.addColorStop(1, '#7a0a2e');
+    ctx.fillStyle = sg;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+
+    // Spinning seam lines (rotate with world scroll)
+    const angle = (l7WorldY / 55) % TAU;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(angle);
+    ctx.strokeStyle = 'rgba(255,255,255,0.20)'; ctx.lineWidth = 1.5;
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath(); ctx.moveTo(0, -r*0.8); ctx.lineTo(0, r*0.8); ctx.stroke();
+      ctx.rotate(TAU / 3);
+    }
+    ctx.restore();
+
+    // Eyes
+    ctx.fillStyle = '#fff5ee';
+    ctx.beginPath(); ctx.arc(x-6, y-5, 4.5, 0, TAU); ctx.arc(x+6, y-5, 4.5, 0, TAU); ctx.fill();
+    const pupilShift = Math.max(-2.5, Math.min(2.5, l7BallVX * 0.009));
+    ctx.fillStyle = '#2a1020';
+    ctx.beginPath(); ctx.arc(x-6+pupilShift, y-5, 2.2, 0, TAU); ctx.arc(x+6+pupilShift, y-5, 2.2, 0, TAU); ctx.fill();
+    // Eye gleam
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.beginPath(); ctx.arc(x-7, y-7, 1, 0, TAU); ctx.arc(x+5, y-7, 1, 0, TAU); ctx.fill();
+
+    // Hair streaks when moving laterally
+    const spd = Math.abs(l7BallVX);
+    if (spd > 50) {
+      const dir = l7BallVX > 0 ? -1 : 1;
+      ctx.strokeStyle = custom.hair ?? '#c87840';
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 4; i++) {
+        const len = Math.min(28, spd / 180 * (14 + i * 5));
+        ctx.lineWidth = 2 - i * 0.3;
+        ctx.globalAlpha = 0.6 - i * 0.12;
+        ctx.beginPath();
+        ctx.moveTo(x + dir * r * 0.72, y - 4 + i * 3.5);
+        ctx.lineTo(x + dir * (r * 0.72 + len), y - 4 + i * 3.5);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1; ctx.lineCap = 'butt'; ctx.lineWidth = 1;
+    }
+
+    // Specular highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.24)';
+    ctx.beginPath(); ctx.ellipse(x-r*0.28, y-r*0.34, r*0.30, r*0.18, -0.5, 0, TAU); ctx.fill();
+  }
+
   // ── Level 3 (Flappy) state & logic ────────────────────────────────────────
   let flY = 0, flVY = 0, flScrollX = 0;
 
@@ -2244,6 +2486,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (levelId === 4) { drawFalling(); drawVignette(); return; }
     if (levelId === 5) { drawLevel5(); return; }
     if (levelId === 6) { drawL6(); return; }
+    if (levelId === 7) { drawL7(); return; }
     if (levelId === 1) {
       drawSky(); drawSun(); drawClouds(); drawMountains();
       drawWaterfalls();
@@ -2833,10 +3076,14 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (levelId === 5) { l5JDX = dx; l5JDY = dy; }
   }
 
+  function setTilt(gamma: number) {
+    if (levelId === 7) l7Tilt = gamma;
+  }
+
   function destroy() {
     cancelAnimationFrame(rafId);
     window.removeEventListener('resize', resize);
   }
 
-  return { pressJump, releaseJump, pointerDown, pointerUp, setJoystick, destroy };
+  return { pressJump, releaseJump, pointerDown, pointerUp, setJoystick, setTilt, destroy };
 }
