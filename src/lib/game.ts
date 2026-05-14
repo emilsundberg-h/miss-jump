@@ -1223,14 +1223,16 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   let l6PVY     = 0;      // vertical velocity (negative = moving up)
   let l6Holding = false;
   let l6HoldT   = 0;
-  let l6Jumps   = 0;      // jump count (0=ground, 1=first, 2=double)
+  let l6Jumps    = 0;      // jump count (0=ground, 1=first, 2=double)
+  let l6Flipping = false;
+  let l6FlipT    = 0;
   let l6RunT    = 0;
   let l6Obs: L6Obs[] = [];
   let l6NextGap = 800;    // px until next obstacle spawns
 
   function startL6() {
     l6Dist = 0; l6Speed = L6_BASE_SPD;
-    l6PY = 0; l6PVY = 0; l6Holding = false; l6HoldT = 0; l6RunT = 0; l6Jumps = 0;
+    l6PY = 0; l6PVY = 0; l6Holding = false; l6HoldT = 0; l6RunT = 0; l6Jumps = 0; l6Flipping = false; l6FlipT = 0;
     l6Obs = []; l6NextGap = 900 + Math.random() * 600;
     score = 0; gstate = 'play';
     cb.onStateChange('play'); cb.onScore(0); cb.onProgress(0);
@@ -1240,6 +1242,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (gstate !== 'play') return;
     if (l6Jumps >= 2) return; // max double jump
     l6PVY = l6Jumps === 0 ? L6_JUMP_VEL : L6_JUMP_VEL * 0.86;
+    if (l6Jumps === 1) { l6Flipping = true; l6FlipT = 0; spawnPuff(W * L6_PLAYER_XF, H * L6_GROUND_F - l6PY); }
     l6Holding = true; l6HoldT = 0; l6Jumps++;
   }
 
@@ -1255,6 +1258,10 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     l6Speed = Math.min(L6_MAX_SPD, L6_BASE_SPD + l6Dist / 30);
     l6Dist += l6Speed * dt;
     l6RunT += dt;
+    if (l6Flipping) {
+      l6FlipT = Math.min(1, l6FlipT + dt / 0.38);
+      if (l6FlipT >= 1) { l6Flipping = false; l6FlipT = 0; }
+    }
 
     // Vertical physics
     if (l6Holding && l6HoldT < L6_MAX_HOLD && l6PVY < 0) {
@@ -1262,7 +1269,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     }
     l6PVY += L6_GRAVITY * dt;
     l6PY  -= l6PVY * dt;
-    if (l6PY <= 0) { l6PY = 0; l6PVY = 0; l6Holding = false; l6Jumps = 0; }
+    if (l6PY <= 0) { l6PY = 0; l6PVY = 0; l6Holding = false; l6Jumps = 0; l6Flipping = false; l6FlipT = 0; }
 
     // Scroll obstacles
     for (const o of l6Obs) o.x -= l6Speed * dt;
@@ -1498,7 +1505,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     const onGround = l6PY < 2;
     const pose = onGround ? 'skate' : (l6PVY < 0 ? 'jump' : 'fall');
     const charY = gY - l6PY;
-    drawL6Skater(pX, charY, pose, l6RunT);
+    drawL6Skater(pX, charY, pose, l6RunT, l6Flipping, l6FlipT);
 
     // === Speed lines (when fast) ===
     if (l6Speed > 480) {
@@ -1571,7 +1578,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     }
   }
 
-  function drawL6Skater(cx: number, groundY: number, pose: string, runT: number) {
+  function drawL6Skater(cx: number, groundY: number, pose: string, runT: number, flipping = false, flipT = 0) {
     // Shadow
     ctx.fillStyle = 'rgba(0,0,0,0.22)';
     ctx.beginPath(); ctx.ellipse(cx, groundY + 4, 22, 5, 0, 0, TAU); ctx.fill();
@@ -1579,9 +1586,15 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     const legSwing = pose === 'skate' ? Math.sin(runT * 5.5) * 0.35 : pose === 'jump' ? -0.5 : 0.3;
     const armSwing = pose === 'skate' ? -Math.sin(runT * 5.5) * 0.4 : pose === 'jump' ? -0.8 : 0.4;
     const lean = pose === 'skate' ? 0.12 : 0.04;
+    const CHAR_MID = 38; // approximate half-height of character (for rotation pivot)
 
     ctx.save();
     ctx.translate(cx, groundY - 8);
+    if (flipping) {
+      ctx.translate(0, -CHAR_MID);
+      ctx.rotate(flipT * TAU);
+      ctx.translate(0, CHAR_MID);
+    }
     ctx.rotate(lean);
 
     // Roller skates (drawn first, lowest)
