@@ -93,11 +93,12 @@ export default function Game() {
   const [copied,   setCopied]   = useState(false);
   const [muted,    setMuted]    = useState(false);
   const [easy,     setEasy]     = useState(false);
-  const [tiltOk,   setTiltOk]   = useState(() => localStorage.getItem('mj_tilt') === 'granted');
+  const [tiltOk,   setTiltOk]   = useState(() => { try { return localStorage.getItem('mj_tilt') === 'granted'; } catch { return false; } });
 
   // Device orientation → tilt (level 7)
   useEffect(() => {
     if (!tiltOk) return;
+    // beta = front/back tilt: negative = top edge up = ball lifts
     const handler = (e: DeviceOrientationEvent) => controlRef.current?.setTilt(e.gamma ?? 0);
     window.addEventListener('deviceorientation', handler);
     return () => window.removeEventListener('deviceorientation', handler);
@@ -184,13 +185,16 @@ export default function Game() {
     const W2 = window.innerWidth / 2;
     const kd = (e: KeyboardEvent) => {
       if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") { e.preventDefault(); music.start(); pressJump(); }
-      if (e.code === "ArrowLeft")  { e.preventDefault(); controlRef.current?.setTilt(-40); controlRef.current?.pointerDown(W2 - 1, 1); }
-      if (e.code === "ArrowRight") { e.preventDefault(); controlRef.current?.setTilt(40);  controlRef.current?.pointerDown(W2 + 1, 1); }
+      if (e.code === "ArrowLeft")  { e.preventDefault(); controlRef.current?.pointerDown(W2 - 1, 1); }
+      if (e.code === "ArrowRight") { e.preventDefault(); controlRef.current?.pointerDown(W2 + 1, 1); }
+      if (e.code === "ArrowUp")    { e.preventDefault(); controlRef.current?.setTilt(-55); } // simulate tilting back
+      if (e.code === "ArrowDown")  { e.preventDefault(); controlRef.current?.setTilt(20); }
     };
     const ku = (e: KeyboardEvent) => {
       if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") releaseJump();
-      if (e.code === "ArrowLeft")  { controlRef.current?.setTilt(0); controlRef.current?.pointerUp(W2 - 1, 1); }
-      if (e.code === "ArrowRight") { controlRef.current?.setTilt(0); controlRef.current?.pointerUp(W2 + 1, 1); }
+      if (e.code === "ArrowLeft")  { controlRef.current?.pointerUp(W2 - 1, 1); }
+      if (e.code === "ArrowRight") { controlRef.current?.pointerUp(W2 + 1, 1); }
+      if (e.code === "ArrowUp" || e.code === "ArrowDown") controlRef.current?.setTilt(0);
     };
     window.addEventListener("keydown", kd);
     window.addEventListener("keyup",   ku);
@@ -332,8 +336,8 @@ export default function Game() {
             <LevelCard num={6} title="Fairground" description="Roller-skate the amusement park. Jump over cotton candy, ice cream and popcorn — faster and faster!" difficulty={3} mechanic="⛸️ Jump"
               palette={{ bg: "linear-gradient(150deg,#1a2a4a,#0e1830)", accent: "#ffd470", dot: "#ff9ec0", badge: "#4a6a20" }}
               best={bests[6]} onClick={() => setLevelId(6)} />
-            <LevelCard num={7} title="Pinball" description="Miss Li rolls up into a ball. Tilt your device to steer through neon barriers before the floor crushes you!" difficulty={4} mechanic="📱 Tilt"
-              palette={{ bg: "linear-gradient(150deg,#1a0430,#06040e)", accent: "#ff3a8a", dot: "#40e8ff", badge: "#6a0a30" }}
+            <LevelCard num={7} title="Night Fall" description="Miss Li rolls into a ball and falls through the forest floor. Guide her through platform gaps in the dark — faster and faster!" difficulty={4} mechanic="← → Steer"
+              palette={{ bg: "linear-gradient(150deg,#040c1c,#06122a)", accent: "#6ab87a", dot: "#c8e0ff", badge: "#142840" }}
               best={bests[7]} onClick={() => setLevelId(7)} />
           </div>
         </div>
@@ -342,7 +346,7 @@ export default function Game() {
       {/* ── In-game start ── */}
       <Overlay show={!!levelId && state === "start"} onClick={pressJump}>
         <TitleCard>
-          <Eyebrow>{["","Forest Tour · Act 1","Cloud Tour · Act 2","Miss Flappy · Act 3","Free Fall · Act 4","Mic Drop · Act 5","Fairground · Act 6","Pinball · Act 7"][levelId!]}</Eyebrow>
+          <Eyebrow>{["","Forest Tour · Act 1","Cloud Tour · Act 2","Miss Flappy · Act 3","Free Fall · Act 4","Mic Drop · Act 5","Fairground · Act 6","Night Fall · Act 7"][levelId!]}</Eyebrow>
           <BigTitle>Miss Jump</BigTitle>
           <Subtitle>{levelId === 1
             ? "Jump over spikes and gaps. Reach the stage by the waterfall."
@@ -356,12 +360,9 @@ export default function Game() {
             ? "Top-down arena. Use the joystick to move. Tap the stage to throw your mic. Hit all 40 artists!"
             : levelId === 6
             ? "Roller-skate the fairground. Tap to jump. Dodge cotton candy, ice cream and popcorn. It gets faster and faster!"
-            : "Miss Li rolls into a ball! Tilt your device left and right to steer through neon barriers. Don't get crushed by the rising floor!"
+            : "Walk Miss Li into the glowing hole in the forest floor. She'll roll into a ball — then steer left and right to fall through the gaps before the platforms push you off the top!"
           }</Subtitle>
-          {levelId === 7 && !tiltOk
-            ? <Cta onClick={() => { requestTilt().then(() => pressJump()); }}>Enable Tilt & Play</Cta>
-            : <Cta onClick={pressJump}>Start the Show <Key>SPACE</Key></Cta>
-          }
+          <Cta onClick={pressJump}>Start the Show <Key>SPACE</Key></Cta>
           <div onClick={e => e.stopPropagation()}>
             <BackLink onClick={() => setLevelId(null)}>← Change Level</BackLink>
           </div>

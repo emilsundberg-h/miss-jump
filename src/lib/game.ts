@@ -87,33 +87,22 @@ const L6_WIN_DIST   = 45000; // px — displayed as 4500 m
 const L6_GROUND_F   = 0.82;  // groundY = H * L6_GROUND_F
 const L6_PLAYER_XF  = 0.18;  // fixed player screen-X fraction
 
-// ── Level 7: Pinball — tilt ball through neon barriers ─────────────────────
-const L7_BALL_R      = 26;
-const L7_BLOCK_H     = 46;
-const L7_BASE_SPD    = 230;  // px/s scroll
-const L7_MAX_SPD     = 600;
-const L7_WIN_DIST    = 28000;
-const L7_BALL_YF     = 0.30;  // ball fixed screen-Y fraction
-const L7_TILT_FORCE  = 950;   // lateral acceleration (px/s²) per 90° tilt
-const L7_FRICTION    = 0.87;  // per-frame lateral friction
-
-const L7_BLOCK_DEFS: { wy: number; gapFrac: number; gapWFrac: number }[] = (() => {
-  const list: { wy: number; gapFrac: number; gapWFrac: number }[] = [];
-  let s = 13572468;
-  const r = () => { s = (s * 1664525 + 1013904223) >>> 0; return (s >>> 0) / 4294967296; };
-  const REACH = 0.24;
-  let prevGL = 0.32, prevGR = 0.68;
-  for (let y = 380; y < L7_WIN_DIST + 400; y += 260 + r() * 130) {
-    const hw   = 0.12 + r() * 0.06;
-    const rawC = 0.18 + r() * 0.64;
-    const centre = Math.max(prevGR - REACH - hw, Math.min(prevGL + REACH + hw, rawC));
-    const gL = Math.max(0.04, centre - hw);
-    const gR = Math.min(0.96, centre + hw);
-    prevGL = gL; prevGR = gR;
-    list.push({ wy: y, gapFrac: gL, gapWFrac: gR - gL });
-  }
-  return list;
-})();
+// ── Level 7: Night Forest Falldown ──────────────────────────────────────────
+const L7_BALL_R       = 22;    // ball radius px
+const L7_APPROACH_SPD = 210;   // auto-walk speed in approach phase (px/s)
+const L7_HOLE_XF      = 0.52;  // hole left edge fraction of W
+const L7_HOLE_WF      = 0.16;  // hole width fraction of W
+const L7_CURL_DUR     = 1.2;   // transition animation duration (s)
+const L7_FD_GRAVITY   = 1500;  // falldown ball gravity (px/s²)
+const L7_FD_BASE_SPD  = 85;    // initial platform scroll speed (px/s upward)
+const L7_FD_MAX_SPD   = 310;   // max platform scroll speed
+const L7_FD_H_SPEED   = 265;   // max horizontal ball speed
+const L7_FD_H_ACCEL   = 520;   // horizontal acceleration
+const L7_FD_PLAT_H    = 24;    // platform physics/visual thickness
+const L7_FD_WIN_PLATS = 18;    // platforms to pass to win
+const L7_FD_GAP_WF    = 0.10;  // gap width fraction (normal)
+const L7_FD_GAP_WF_EZ = 0.14;  // gap width fraction (easy)
+const L7_FD_SPACING_F = 0.26;  // vertical spacing between platforms as fraction of H
 
 const TAU = Math.PI * 2;
 
@@ -128,6 +117,15 @@ const FLAP_BG = (() => {
     fx: r(), fy: r() * 0.50, sr: 0.8 + r() * 1.5, phase: r() * Math.PI * 2,
   }));
   return { clouds, stars };
+})();
+
+// Pre-generated stars for Level 7 night sky
+const L7_STARS: { fx: number; fy: number; sr: number; phase: number }[] = (() => {
+  let s = 11223344;
+  const r = () => { s = (s * 1664525 + 1013904223) >>> 0; return (s >>> 0) / 4294967296; };
+  return Array.from({ length: 120 }, () => ({
+    fx: r(), fy: r() * 0.60, sr: 0.5 + r() * 1.8, phase: r() * Math.PI * 2,
+  }));
 })();
 
 // ===== Color palette — golden hour =====
@@ -1746,259 +1744,602 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     ctx.restore();
   }
 
-  // ── Level 7: Pinball — tilt ball through neon barriers ─────────────────────
-  let l7WorldY  = 0;
-  let l7Speed   = L7_BASE_SPD;
-  let l7BallX   = 0;
-  let l7BallVX  = 0;
-  let l7Tilt    = 0;   // gamma degrees from DeviceOrientation
+  // ── Level 7: Night Forest Falldown ─────────────────────────────────────────
+  type L7Phase = 'approach' | 'curl' | 'falldown';
+  let l7Phase: L7Phase = 'approach';
+
+  // Approach phase — character walks on forest platform and falls through hole
+  let l7ApX        = 0;
+  let l7ApY        = 0;    // pixels above ground (same sign as player.y)
+  let l7ApVX       = L7_APPROACH_SPD;
+  let l7ApVY       = 0;
+  let l7ApOnGround = true;
+  let l7ApJumps    = 0;
+  let l7ApHolding  = false;
+  let l7ApHoldTime = 0;
+  let l7ApRunT     = 0;
+
+  // Curl transition
+  let l7CurlT = 0;
+  let l7HoleCenterX = 0; // screen X of hole center when curl starts
+
+  // Falldown state
+  interface L7FDPlat { sy: number; gapX: number; gapW: number; passed: boolean }
+  let l7FdBallX      = 0;
+  let l7FdBallY      = 0;
+  let l7FdBallVX     = 0;
+  let l7FdBallVY     = 0;
+  let l7FdSpinX      = 0;
+  let l7FdSpeed      = L7_FD_BASE_SPD;
+  let l7FdTime       = 0;
+  let l7FdPassed     = 0;
+  let l7FdRidingPlat: L7FDPlat | null = null;
+  let l7FdTilt       = 0;
+  let l7FdHoldL      = false;
+  let l7FdHoldR      = false;
+  let l7FdPlats: L7FDPlat[] = [];
+  let l7FdRngS       = 0;
+
+  function l7FdRand(): number {
+    l7FdRngS = (l7FdRngS * 1664525 + 1013904223) >>> 0;
+    return (l7FdRngS >>> 0) / 4294967296;
+  }
 
   function startL7() {
-    l7WorldY = 0; l7Speed = L7_BASE_SPD;
-    l7BallX = W / 2; l7BallVX = 0; l7Tilt = 0;
+    l7Phase = 'approach';
+    l7ApX = W * 0.14; l7ApY = 0;
+    l7ApVX = L7_APPROACH_SPD; l7ApVY = 0;
+    l7ApOnGround = true; l7ApJumps = 0;
+    l7ApHolding = false; l7ApHoldTime = 0; l7ApRunT = 0;
     score = 0; gstate = 'play';
     cb.onStateChange('play'); cb.onScore(0); cb.onProgress(0);
   }
 
   function updateL7(dt: number) {
-    const maxSpd = easy ? 400 : L7_MAX_SPD;
-    const ramp   = easy ? 60  : 35;
-    l7Speed = Math.min(maxSpd, L7_BASE_SPD + l7WorldY / ramp);
-    l7WorldY += l7Speed * dt;
+    if (l7Phase === 'approach') { updateL7Approach(dt); return; }
+    if (l7Phase === 'curl')     { updateL7Curl(dt);     return; }
+    updateL7Falldown(dt);
 
-    // Lateral physics from tilt (dead zone ±4°)
-    const tiltForce = Math.abs(l7Tilt) < 4 ? 0 : (l7Tilt / 90) * L7_TILT_FORCE;
-    l7BallVX += tiltForce * dt;
-    l7BallVX *= Math.pow(L7_FRICTION, dt * 60);
-    l7BallX  += l7BallVX * dt;
+  }
 
-    // Wall bounce
-    if (l7BallX - L7_BALL_R < 0)  { l7BallX = L7_BALL_R;      l7BallVX = Math.abs(l7BallVX) * 0.55; }
-    if (l7BallX + L7_BALL_R > W)  { l7BallX = W - L7_BALL_R;  l7BallVX = -Math.abs(l7BallVX) * 0.55; }
+  function updateL7Approach(dt: number) {
+    l7ApX += l7ApVX * dt;
+    if (l7ApX > W * 0.88) { l7ApX = W * 0.88; l7ApVX = -Math.abs(l7ApVX); }
+    if (l7ApX < W * 0.10) { l7ApX = W * 0.10; l7ApVX =  Math.abs(l7ApVX); }
 
-    // Block collision (easy = 45% wider gaps)
-    const gapMul = easy ? 1.45 : 1.0;
-    const ballWorldY = l7WorldY + H * L7_BALL_YF;
-    for (const b of L7_BLOCK_DEFS) {
-      const top = b.wy, bot = b.wy + L7_BLOCK_H;
-      if (ballWorldY + L7_BALL_R * 0.7 < top || ballWorldY - L7_BALL_R * 0.7 > bot) continue;
-      const gapW = b.gapWFrac * W * gapMul;
-      const gapL = Math.max(0, b.gapFrac * W - (gapMul - 1) * b.gapWFrac * W * 0.5);
-      const gapR = gapL + gapW;
-      if (l7BallX - L7_BALL_R * 0.65 < gapL || l7BallX + L7_BALL_R * 0.65 > gapR) {
+    if (l7ApHolding && l7ApHoldTime < MAX_HOLD && l7ApVY < 0) {
+      l7ApVY += JUMP_HOLD_BOOST * dt; l7ApHoldTime += dt;
+    }
+    l7ApVY += GRAVITY * dt;
+    l7ApY  -= l7ApVY * dt;
+
+    const holeLeft  = W * L7_HOLE_XF;
+    const holeRight = holeLeft + W * L7_HOLE_WF;
+    const inHole    = l7ApX > holeLeft + 12 && l7ApX < holeRight - 12;
+
+    if (!inHole && l7ApY <= 0) {
+      l7ApY = 0; l7ApVY = 0; l7ApOnGround = true; l7ApJumps = 0; l7ApHolding = false;
+    } else if (inHole) {
+      l7ApOnGround = false;
+      if (l7ApJumps === 0) l7ApJumps = 2;
+      if (l7ApY < -(H * 0.30)) {
+        l7Phase = 'curl'; l7CurlT = 0;
+        l7HoleCenterX = W * L7_HOLE_XF + W * L7_HOLE_WF * 0.5;
+        l7FdBallX = W * 0.5; l7FdBallY = H * 0.22;
+        initL7Falldown();
+      }
+    }
+    if (l7ApOnGround) l7ApRunT += Math.abs(l7ApVX) / 60 * dt;
+  }
+
+  function l7ApPressJump() {
+    if (l7ApJumps < 2) {
+      l7ApVY = l7ApJumps === 0 ? JUMP_VEL : JUMP_VEL * 0.86;
+      l7ApOnGround = false; l7ApHolding = true; l7ApHoldTime = 0; l7ApJumps++;
+    }
+  }
+
+  function l7ApReleaseJump() {
+    if (l7ApVY < 0 && l7ApHolding) {
+      const frac = Math.min(1, l7ApHoldTime / MAX_HOLD);
+      l7ApVY *= JUMP_CUT_MIN + (1 - JUMP_CUT_MIN) * frac;
+    }
+    l7ApHolding = false;
+  }
+
+  function initL7Falldown() {
+    l7FdBallVX = 0; l7FdBallVY = 0;
+    l7FdSpinX = 0; l7FdSpeed = L7_FD_BASE_SPD;
+    l7FdTime = 0; l7FdPassed = 0;
+    l7FdRidingPlat = null; l7FdTilt = 0;
+    l7FdHoldL = false; l7FdHoldR = false;
+    l7FdPlats = []; l7FdRngS = 987654321;
+
+    // First platform visible on screen at H*0.55 — ball starts riding it (Falldown 2 style)
+    const firstPlatSy = H * 0.55;
+    l7FdBallX = W * 0.5;
+    l7FdBallY = firstPlatSy - L7_BALL_R;  // sitting on first platform
+
+    let pgX = W * 0.36, pgW = W * (easy ? L7_FD_GAP_WF_EZ : L7_FD_GAP_WF);
+    for (let i = 0; i < L7_FD_WIN_PLATS + 8; i++) {
+      const { gX, gW } = l7FdMakeGap(pgX, pgW);
+      pgX = gX; pgW = gW;
+      l7FdPlats.push({ sy: firstPlatSy + i * H * L7_FD_SPACING_F, gapX: gX, gapW: gW, passed: false });
+    }
+    // Ball rides the first platform from the start
+    l7FdRidingPlat = l7FdPlats[0];
+  }
+
+  // Generates a gap that is reachable from prevGX/prevGW but offset enough to require steering.
+  // Alternates left/right side to prevent three-in-a-row aligned gaps.
+  function l7FdMakeGap(prevGX: number, prevGW: number): { gX: number; gW: number } {
+    // Minimum gap must fit the ball (diameter + small margin)
+    const minGap  = L7_BALL_R * 2 + 20;
+    const gW      = Math.max(minGap, W * (easy ? L7_FD_GAP_WF_EZ : L7_FD_GAP_WF));
+    const prevCX  = prevGX + prevGW / 2;
+    const reach   = W * 0.28;
+    // Pick a side opposite to where the previous gap was, then add jitter
+    const goRight = prevCX < W / 2;
+    const base    = goRight
+      ? W * 0.50 + l7FdRand() * W * 0.35   // right half
+      : W * 0.08 + l7FdRand() * W * 0.35;  // left half
+    const raw     = base - gW * 0.5;
+    const gX      = Math.max(8, Math.min(W - gW - 8,
+      Math.max(prevGX - reach, Math.min(prevGX + prevGW + reach - gW, raw))));
+    return { gX, gW };
+  }
+
+  function updateL7Curl(dt: number) {
+    l7CurlT = Math.min(1, l7CurlT + dt / L7_CURL_DUR);
+    if (l7CurlT >= 1) l7Phase = 'falldown';
+  }
+
+  function updateL7Falldown(dt: number) {
+    l7FdTime += dt;
+    l7FdSpeed = Math.min(L7_FD_MAX_SPD, L7_FD_BASE_SPD + l7FdTime * 10);
+
+    // ── Horizontal ──────────────────────────────────────────────────────────
+    const hAcc = L7_FD_H_ACCEL * dt;
+    if (l7FdHoldL) l7FdBallVX -= hAcc;
+    if (l7FdHoldR) l7FdBallVX += hAcc;
+    l7FdBallVX += l7FdTilt * L7_FD_H_ACCEL * 0.75 * dt;
+    l7FdBallVX *= (1 - 3.5 * dt);
+    l7FdBallVX = Math.max(-L7_FD_H_SPEED, Math.min(L7_FD_H_SPEED, l7FdBallVX));
+    const prevBX = l7FdBallX;
+    l7FdBallX += l7FdBallVX * dt;
+    l7FdSpinX += Math.abs(l7FdBallX - prevBX);
+    if (l7FdBallX < L7_BALL_R + 4)     { l7FdBallX = L7_BALL_R + 4;     l7FdBallVX =  Math.abs(l7FdBallVX) * 0.55; }
+    if (l7FdBallX > W - L7_BALL_R - 4) { l7FdBallX = W - L7_BALL_R - 4; l7FdBallVX = -Math.abs(l7FdBallVX) * 0.55; }
+
+    // ── Vertical (collision checked BEFORE platforms scroll) ─────────────────
+    if (l7FdRidingPlat) {
+      // Ball sits on platform; check if it slides over gap
+      const inG = l7FdBallX >= l7FdRidingPlat.gapX &&
+                  l7FdBallX <= l7FdRidingPlat.gapX + l7FdRidingPlat.gapW;
+      if (inG) {
+        l7FdScorePlat(l7FdRidingPlat);
+        l7FdRidingPlat = null;
+        l7FdBallVY = 50; // gentle launch downward
+      }
+    } else {
+      // Free-falling — check collision against current (pre-scroll) platform positions
+      const prevBY   = l7FdBallY;
+      l7FdBallVY     = Math.min(l7FdBallVY + L7_FD_GRAVITY * dt, 600);
+      l7FdBallY     += l7FdBallVY * dt;
+
+      for (const p of l7FdPlats) {
+        const prevBot = prevBY  + L7_BALL_R; // ball bottom at START of frame
+        const currBot = l7FdBallY + L7_BALL_R; // ball bottom at END of frame
+        // Platform top hasn't moved yet — p.sy is still the pre-scroll value
+        if (prevBot <= p.sy && currBot >= p.sy) {
+          const inGap = l7FdBallX >= p.gapX && l7FdBallX <= p.gapX + p.gapW;
+          if (!inGap) {
+            // Land on platform
+            l7FdBallY = p.sy - L7_BALL_R;
+            l7FdBallVY = 0;
+            l7FdRidingPlat = p;
+            break;
+          } else {
+            l7FdScorePlat(p);
+          }
+        }
+      }
+
+      // Clamp: never exit the bottom
+      if (l7FdBallY > H - L7_BALL_R - 8) {
+        l7FdBallY  = H - L7_BALL_R - 8;
+        l7FdBallVY = 0;
+        // Snap to any platform close below
+        for (const p of l7FdPlats) {
+          if (p.sy >= l7FdBallY + L7_BALL_R && p.sy <= H * 1.05) {
+            const inGap = l7FdBallX >= p.gapX && l7FdBallX <= p.gapX + p.gapW;
+            if (!inGap) { l7FdBallY = p.sy - L7_BALL_R; l7FdRidingPlat = p; break; }
+          }
+        }
+      }
+    }
+
+    // ── Scroll platforms (after collision resolved) ──────────────────────────
+    for (const p of l7FdPlats) p.sy -= l7FdSpeed * dt;
+
+    // After scroll: snap riding ball to platform's new position
+    if (l7FdRidingPlat) {
+      l7FdBallY  = l7FdRidingPlat.sy - L7_BALL_R;
+      l7FdBallVY = -l7FdSpeed; // for hair-streak effect
+      // Riding platform exited top → lose
+      if (l7FdRidingPlat.sy < -L7_FD_PLAT_H) {
         loseGame(); return;
       }
     }
 
-    // Crushing floor — accelerates with speed (starts slow, then rushes up)
-    const progress = Math.min(1, l7WorldY / L7_WIN_DIST);
-    const floorRise = Math.min(H * 0.46, H * progress * progress * (easy ? 0.28 : 0.46));
-    const floorScreenY = H - floorRise;
-    if (H * L7_BALL_YF + L7_BALL_R > floorScreenY) { loseGame(); return; }
+    // Remove platforms that have scrolled off the top
+    l7FdPlats = l7FdPlats.filter(p => {
+      if (p === l7FdRidingPlat) return true; // keep riding platform until lose
+      return p.sy > -L7_FD_PLAT_H - 4;
+    });
 
-    score = Math.floor(l7WorldY / 10);
+    // Generate new platforms off the bottom
+    for (let guard = 0; guard < 6; guard++) {
+      const last = l7FdPlats[l7FdPlats.length - 1];
+      if (last && last.sy > H * L7_FD_SPACING_F * 1.1) break;
+      const prev = l7FdPlats[l7FdPlats.length - 1];
+      const pgX2 = prev ? prev.gapX : W * 0.36;
+      const pgW2 = prev ? prev.gapW : W * L7_FD_GAP_WF;
+      const { gX, gW } = l7FdMakeGap(pgX2, pgW2);
+      l7FdPlats.push({ sy: (prev ? prev.sy : H) + H * L7_FD_SPACING_F, gapX: gX, gapW: gW, passed: false });
+    }
+
+    // Lose: ball pushed off top of screen
+    if (l7FdBallY < -L7_BALL_R - 4) { loseGame(); return; }
+  }
+
+  function l7FdScorePlat(p: L7FDPlat) {
+    if (p.passed) return;
+    p.passed = true;
+    l7FdPassed++;
+    score = l7FdPassed * 12;
     cb.onScore(score);
-    cb.onProgress(Math.min(1, l7WorldY / L7_WIN_DIST));
-    if (l7WorldY >= L7_WIN_DIST) winGame();
+    cb.onProgress(Math.min(1, l7FdPassed / L7_FD_WIN_PLATS));
+    if (l7FdPassed >= L7_FD_WIN_PLATS) winGame();
   }
 
   function drawL7() {
-    const t = performance.now() / 1000;
-
-    // Dark neon bg
-    ctx.fillStyle = '#06040e'; ctx.fillRect(0, 0, W, H);
-
-    // Scrolling hex-grid (subtle neon pink lines)
-    const gs = 70;
-    ctx.strokeStyle = 'rgba(200,40,100,0.07)'; ctx.lineWidth = 1;
-    const gridOffY = l7WorldY % gs;
-    for (let gx = 0; gx <= W; gx += gs) {
-      ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke();
-    }
-    for (let gy = -gridOffY; gy < H + gs; gy += gs) {
-      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
-    }
-
-    // Blocks
-    const ballWorldY = l7WorldY + H * L7_BALL_YF;
-    const drawGapMul = easy ? 1.45 : 1.0;
-    for (const b of L7_BLOCK_DEFS) {
-      const sY = b.wy - l7WorldY;
-      if (sY + L7_BLOCK_H < -30 || sY > H + 30) continue;
-      const gapWRaw = b.gapWFrac * W * drawGapMul;
-      const gapL2   = Math.max(0, b.gapFrac * W - (drawGapMul - 1) * b.gapWFrac * W * 0.5);
-      const gapW    = Math.min(gapWRaw, W - gapL2);
-      const dist    = Math.abs(b.wy - ballWorldY);
-      const hot     = dist < 260;
-
-      // Block fill
-      ctx.fillStyle = '#140820';
-      if (gapL2 > 0)            ctx.fillRect(0,           sY, gapL2,           L7_BLOCK_H);
-      if (W - gapL2 - gapW > 0) ctx.fillRect(gapL2 + gapW, sY, W - gapL2 - gapW, L7_BLOCK_H);
-
-      // Neon top-edge glow
-      const neon = hot ? '#ff2060' : '#8a1040';
-      ctx.shadowBlur = hot ? 18 : 8; ctx.shadowColor = neon;
-      ctx.strokeStyle = neon; ctx.lineWidth = 2;
-      ctx.beginPath();
-      if (gapL2 > 0)            { ctx.moveTo(0,            sY); ctx.lineTo(gapL2,            sY); }
-      if (W - gapL2 - gapW > 0) { ctx.moveTo(gapL2 + gapW, sY); ctx.lineTo(W,                sY); }
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-
-      // Gap safe-zone glow (cyan)
-      const gg = ctx.createLinearGradient(gapL2, 0, gapL2 + gapW, 0);
-      gg.addColorStop(0, 'rgba(60,200,255,0)');
-      gg.addColorStop(0.5, hot ? 'rgba(60,200,255,0.14)' : 'rgba(60,200,255,0.07)');
-      gg.addColorStop(1, 'rgba(60,200,255,0)');
-      ctx.fillStyle = gg; ctx.fillRect(gapL2, sY, gapW, L7_BLOCK_H);
-
-      // Gap edge lines
-      ctx.strokeStyle = 'rgba(60,200,255,0.35)'; ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(gapL2,          sY); ctx.lineTo(gapL2,          sY + L7_BLOCK_H);
-      ctx.moveTo(gapL2 + gapW,   sY); ctx.lineTo(gapL2 + gapW,   sY + L7_BLOCK_H);
-      ctx.stroke();
-
-      // Particle sparks on edges (when near)
-      if (hot && Math.random() < 0.3) {
-        const sx2 = Math.random() < 0.5 ? gapL2 : gapL2 + gapW;
-        ctx.fillStyle = '#ff6090'; ctx.globalAlpha = 0.7;
-        ctx.fillRect(sx2 + (Math.random()-0.5)*6, sY + Math.random()*L7_BLOCK_H, 2, 2);
-        ctx.globalAlpha = 1;
-      }
-    }
-
-    // Rising danger floor — accelerates quadratically (progress²)
-    const prog = Math.min(1, l7WorldY / L7_WIN_DIST);
-    const floorRise = Math.min(H * 0.46, H * prog * prog * (easy ? 0.28 : 0.46));
-    const floorY = H - floorRise;
-    const fg = ctx.createLinearGradient(0, floorY - 60, 0, floorY);
-    fg.addColorStop(0, 'rgba(255,20,60,0)');
-    fg.addColorStop(1, 'rgba(255,20,60,0.42)');
-    ctx.fillStyle = fg; ctx.fillRect(0, floorY - 60, W, 60);
-    ctx.fillStyle = '#c0103a'; ctx.fillRect(0, floorY, W, H - floorY);
-    ctx.shadowBlur = 16; ctx.shadowColor = '#ff2050';
-    ctx.strokeStyle = '#ff3060'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(0, floorY); ctx.lineTo(W, floorY); ctx.stroke();
-    ctx.shadowBlur = 0;
-
-    // Ball
-    drawL7Ball(l7BallX, H * L7_BALL_YF);
-
-    // Speed lines (when fast)
-    if (l7Speed > 360) {
-      const a = Math.min(0.22, (l7Speed - 360) / 1400);
-      ctx.strokeStyle = `rgba(255,80,160,${a})`;
-      ctx.lineWidth = 1; ctx.lineCap = 'round';
-      for (let i = 0; i < 9; i++) {
-        const lx = ((i * 149 + l7WorldY * 0.6) % (W + 40) + W + 40) % (W + 40) - 20;
-        const ly = H * 0.05 + i * H * 0.10;
-        const ll = 18 + i * 7;
-        ctx.globalAlpha = a * (0.5 + Math.sin(t * 3 + i) * 0.3);
-        ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(lx + ll, ly); ctx.stroke();
-      }
-      ctx.globalAlpha = 1; ctx.lineCap = 'butt';
-    }
-
-    // Vignette
-    const vg = ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.3, W/2,H/2,Math.max(W,H)*0.80);
-    vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(6,4,14,0.60)');
-    ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+    if (l7Phase === 'approach') { drawL7Approach(); return; }
+    if (l7Phase === 'curl')     { drawL7Curl();     return; }
+    drawL7Falldown();
   }
 
-  // Miss Li rolled into a ball — uses her actual outfit, hair and skin colours
-  function drawL7Ball(x: number, y: number) {
+  function drawL7Approach() {
+    // Level 1 forest background (camX = 0, so we see the start of the scenery)
+    drawSky(); drawSun(); drawClouds(); drawMountains();
+    drawFarTrees(); drawMidTrees(); drawGroundMist();
+
+    const gy       = groundY();
+    const holeLeft  = W * L7_HOLE_XF;
+    const holeRight = holeLeft + W * L7_HOLE_WF;
+    const holeCenter = (holeLeft + holeRight) / 2;
+
+    // Left ground section
+    drawL7GroundSection(-10, holeLeft, gy);
+    // Right ground section
+    drawL7GroundSection(holeRight, W + 10, gy);
+
+    // Darkness in hole (falling abyss)
+    const dg = ctx.createLinearGradient(0, gy, 0, gy + 55);
+    dg.addColorStop(0, 'rgba(0,0,0,0.70)'); dg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = dg; ctx.fillRect(holeLeft, gy, holeRight - holeLeft, 55);
+
+    // Edge ferns at hole
+    drawFern(holeLeft - 6,  gy + 18 + 6, -1);
+    drawFern(holeRight + 4, gy + 18 + 6,  1);
+
+    // Bouncing arrow hint pointing into hole
+    const arrowT  = performance.now() / 1000;
+    const arrowY  = gy - 28 - Math.abs(Math.sin(arrowT * 2.4)) * 9;
+    ctx.fillStyle = 'rgba(255,210,80,0.65)';
+    ctx.beginPath();
+    ctx.moveTo(holeCenter,      arrowY + 16);
+    ctx.lineTo(holeCenter - 11, arrowY);
+    ctx.lineTo(holeCenter + 11, arrowY);
+    ctx.closePath(); ctx.fill();
+
+    // Character (only when above / at ground level)
+    if (l7ApY > -PLAYER_H * 0.6) {
+      const sx  = l7ApX;
+      const sy  = gy - l7ApY;
+      const inAir   = !l7ApOnGround;
+      const legSwing = inAir ? 0.5 : Math.sin(l7ApRunT) * 0.9;
+      const armSwing = inAir ? -0.4 : Math.sin(l7ApRunT + Math.PI) * 0.7;
+      const bounce   = inAir ? 0 : Math.abs(Math.sin(l7ApRunT * 0.5)) * -2;
+      ctx.fillStyle = 'rgba(0,0,0,0.20)';
+      ctx.beginPath(); ctx.ellipse(sx, gy + 2, 18, 5, 0, 0, TAU); ctx.fill();
+      ctx.save();
+      ctx.translate(sx, sy + bounce);
+      if (l7ApVX < 0) ctx.scale(-1, 1);
+      ctx.rotate(inAir ? 0.05 : 0.08);
+      renderMissLi(ctx, 0, 0, legSwing, armSwing, inAir, false, custom);
+      ctx.restore();
+    }
+
+    drawVignette();
+  }
+
+  function drawL7GroundSection(x1: number, x2: number, gy: number) {
+    const w = x2 - x1; if (w <= 0) return;
+    const dh = H - gy + 40;
+    const g = ctx.createLinearGradient(0, gy, 0, gy + dh);
+    g.addColorStop(0, PAL.stone); g.addColorStop(1, PAL.stoneDark);
+    ctx.fillStyle = g; ctx.fillRect(x1, gy, w, dh);
+    ctx.save(); ctx.globalAlpha = 0.25; ctx.fillStyle = PAL.stoneDark;
+    const seams = Math.floor(w / 80);
+    for (let i = 1; i <= seams; i++) ctx.fillRect(x1 + w*i/(seams+1), gy+14, 2, dh-14);
+    ctx.globalAlpha = 0.15; ctx.fillStyle = PAL.stoneLight;
+    ctx.fillRect(x1+6, gy+14, w-12, 4); ctx.restore();
+    ctx.fillStyle = PAL.moss;      ctx.fillRect(x1, gy, w, 18);
+    ctx.fillStyle = PAL.mossLight; ctx.fillRect(x1, gy, w, 6);
+    ctx.fillStyle = PAL.grass;
+    const tufts = Math.max(3, Math.floor(w / 60));
+    for (let i = 0; i < tufts; i++) {
+      const gx = x1 + 14 + (w - 28) * (i / Math.max(1, tufts - 1));
+      ctx.beginPath();
+      ctx.moveTo(gx,gy); ctx.lineTo(gx-3,gy-7); ctx.lineTo(gx,gy-4);
+      ctx.lineTo(gx+3,gy-8); ctx.lineTo(gx+6,gy-3); ctx.lineTo(gx+8,gy);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.20)'; ctx.fillRect(x1, gy+18, w, 3);
+  }
+
+  function drawL7Curl() {
+    const t  = l7CurlT; // 0..1 over 1.2 s
+    const gy = groundY();
+    const hx = l7HoleCenterX || W * 0.5;
+
+    // ── Phase A (0..0.32): ball dives into hole, forest darkens ──
+    if (t < 0.32) {
+      drawSky(); drawSun(); drawClouds(); drawMountains();
+      drawFarTrees(); drawMidTrees(); drawGroundMist();
+      const p = t / 0.32; // 0..1
+      drawL7GroundSection(-10, W * L7_HOLE_XF, gy);
+      drawL7GroundSection(W * L7_HOLE_XF + W * L7_HOLE_WF, W + 10, gy);
+
+      // Ball falling below ground level (visible briefly as it enters)
+      const ballY  = gy + p * H * 0.28;
+      const ballSpin = t * TAU * 7;
+      // Draw ball only while it's still peeking above the ground edge
+      if (p < 0.45) {
+        const peek = 1 - p / 0.45;
+        ctx.save(); ctx.beginPath();
+        ctx.rect(0, gy, W, H); ctx.clip(); // clip to below-ground zone
+        ctx.globalAlpha = peek;
+        drawL7Ball(hx, ballY, ballSpin, 600);
+        ctx.restore();
+        ctx.globalAlpha = 1;
+      }
+
+      // Darkness erupts upward from the hole
+      const darkY = gy - p * gy * 1.1; // rises from ground to sky
+      const dg = ctx.createLinearGradient(0, darkY, 0, gy + 20);
+      dg.addColorStop(0, 'rgba(4,8,20,0)');
+      dg.addColorStop(0.35, `rgba(4,8,20,${p * 0.88})`);
+      dg.addColorStop(1,   `rgba(4,8,20,${Math.min(1, p * 1.4)})`);
+      ctx.fillStyle = dg; ctx.fillRect(0, darkY, W, gy + 20 - darkY);
+
+    // ── Phase B (0.32..0.70): dark tunnel, speed lines ──
+    } else if (t < 0.70) {
+      ctx.fillStyle = '#04080e'; ctx.fillRect(0, 0, W, H);
+      const p = (t - 0.32) / 0.38; // 0..1
+
+      // Vertical speed streaks — faster as p increases
+      ctx.lineCap = 'round';
+      const scrollOff = p * H * 2.2;
+      for (let i = 0; i < 26; i++) {
+        const lx    = ((i * 71) % (W - 40)) + 20;
+        const phase  = (i * 43) % H;
+        const ly     = ((phase + scrollOff) % (H + 50)) - 25;
+        const len    = 12 + p * (25 + (i % 5) * 14);
+        const alpha  = 0.12 + p * 0.30;
+        ctx.strokeStyle = `rgba(180,210,255,${alpha})`;
+        ctx.lineWidth = 0.7 + (i % 3) * 0.4;
+        ctx.globalAlpha = 0.8;
+        ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(lx, ly + len); ctx.stroke();
+      }
+      ctx.globalAlpha = 1; ctx.lineCap = 'butt'; ctx.lineWidth = 1;
+
+      // Stars fading in from p > 0.55
+      if (p > 0.55) {
+        const sa = (p - 0.55) / 0.45;
+        for (const s of L7_STARS) {
+          ctx.globalAlpha = sa * 0.60;
+          ctx.fillStyle = '#dde8ff';
+          ctx.beginPath(); ctx.arc(s.fx * W, s.fy * H, s.sr, 0, TAU); ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // Ball spinning in center, rising slightly as p→1
+      const ballY   = H * 0.55 - p * H * 0.10;
+      const ballSpin = t * TAU * 6;
+      drawL7Ball(W * 0.5, ballY, ballSpin, -200 * p);
+
+    // ── Phase C (0.70..1.00): night scene reveals, ball glides to start ──
+    } else {
+      const p = (t - 0.70) / 0.30; // 0..1
+      drawL7NightBG();
+
+      // Wipe: black dissolves from top → bottom
+      if (p < 1) {
+        const wipeY = p * H * 1.15; // leading edge of reveal
+        const wg = ctx.createLinearGradient(0, wipeY - H * 0.18, 0, wipeY);
+        wg.addColorStop(0, 'rgba(4,8,20,0.96)');
+        wg.addColorStop(1, 'rgba(4,8,20,0)');
+        ctx.fillStyle = 'rgba(4,8,20,0.96)'; ctx.fillRect(0, 0, W, Math.max(0, wipeY - H * 0.18));
+        ctx.fillStyle = wg;                   ctx.fillRect(0, Math.max(0, wipeY - H * 0.18), W, H * 0.18 + 2);
+      }
+
+      // Ball eases from center to falldown starting position
+      const ease = p < 0.5 ? 2*p*p : 1 - Math.pow(-2*p+2,2)/2;
+      const ballY  = H * 0.50 - ease * (H * 0.50 - l7FdBallY);
+      const ballSpin = t * TAU * 6;
+      ctx.globalAlpha = Math.min(1, p / 0.25);
+      drawL7Ball(W * 0.5, ballY, ballSpin, -60 * (1 - ease));
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  function drawL7NightBG() {
+    const t = performance.now() / 1000;
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#040c1c'); g.addColorStop(0.55, '#06122a'); g.addColorStop(1, '#0c1e3e');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    // Stars
+    for (const s of L7_STARS) {
+      const tw = 0.4 + 0.6 * Math.sin(t * 1.4 + s.phase);
+      ctx.globalAlpha = tw * 0.75; ctx.fillStyle = '#dde8ff';
+      ctx.beginPath(); ctx.arc(s.fx * W, s.fy * H, s.sr, 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    // Moon
+    const mx = W * 0.80, my = H * 0.11, mr = Math.min(34, H * 0.047);
+    const mg = ctx.createRadialGradient(mx, my, 0, mx, my, mr * 3);
+    mg.addColorStop(0, 'rgba(190,210,255,0.42)'); mg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = mg; ctx.fillRect(mx - mr*3, my - mr*3, mr*6, mr*6);
+    ctx.fillStyle = '#dde8ff'; ctx.beginPath(); ctx.arc(mx, my, mr, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#b8cce8';
+    ctx.beginPath(); ctx.arc(mx + mr*0.30, my - mr*0.08, mr*0.86, 0, TAU); ctx.fill();
+    // Far tree silhouettes (camX=0)
+    ctx.fillStyle = '#020504';
+    const ftY = H * 0.72;
+    for (const tr of SCENERY.farTrees) {
+      const x = tr.x * 0.25; if (x + tr.w < -10 || x > W + 10) continue;
+      ctx.beginPath();
+      ctx.moveTo(x - tr.w/2, ftY);
+      ctx.bezierCurveTo(x - tr.w/2, ftY - tr.h*0.7, x, ftY - tr.h, x, ftY - tr.h);
+      ctx.bezierCurveTo(x, ftY - tr.h, x + tr.w/2, ftY - tr.h*0.7, x + tr.w/2, ftY);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle = '#030706';
+    const mtY = H * 0.78;
+    for (const tr of SCENERY.midTrees) {
+      const x = tr.x * 0.45; if (x + tr.w < -20 || x > W + 20) continue;
+      ctx.fillRect(x - 4, mtY - tr.h*0.4, 8, tr.h*0.4);
+      ctx.beginPath(); ctx.ellipse(x, mtY - tr.h*0.60, tr.w*0.50, tr.h*0.45, 0, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(x - tr.w*0.25, mtY - tr.h*0.50, tr.w*0.35, tr.h*0.32, 0, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(x + tr.w*0.25, mtY - tr.h*0.50, tr.w*0.35, tr.h*0.32, 0, 0, TAU); ctx.fill();
+    }
+  }
+
+  function drawL7Falldown() {
+    drawL7NightBG();
+
+    // Platforms (level-1 stone/moss in moonlit palette)
+    for (const p of l7FdPlats) {
+      if (p.sy > H + L7_FD_PLAT_H || p.sy < -L7_FD_PLAT_H - 4) continue;
+      if (p.gapX > 4)          drawL7NightPlatSection(0, p.gapX, p.sy);
+      if (p.gapX + p.gapW < W - 4) drawL7NightPlatSection(p.gapX + p.gapW, W, p.sy);
+
+      // Gap: beam of moonlight shining down through the opening
+      const gapMid = p.gapX + p.gapW / 2;
+      const gapGrad = ctx.createLinearGradient(0, p.sy, 0, p.sy + H * 0.25);
+      gapGrad.addColorStop(0, 'rgba(140,180,255,0.18)');
+      gapGrad.addColorStop(1, 'rgba(140,180,255,0)');
+      ctx.fillStyle = gapGrad;
+      ctx.fillRect(p.gapX, p.sy, p.gapW, H * 0.25);
+
+      // Bright edge lines on gap sides
+      ctx.strokeStyle = 'rgba(160,200,140,0.55)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(p.gapX, p.sy - 2); ctx.lineTo(p.gapX, p.sy + L7_FD_PLAT_H); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(p.gapX + p.gapW, p.sy - 2); ctx.lineTo(p.gapX + p.gapW, p.sy + L7_FD_PLAT_H); ctx.stroke();
+      void gapMid;
+    }
+
+    // Ball
+    drawL7Ball(l7FdBallX, l7FdBallY, (l7FdSpinX / 55) % TAU, l7FdBallVY);
+
+    // Danger flash at top when riding near top edge
+    if (l7FdRidingPlat && l7FdRidingPlat.sy < H * 0.18) {
+      const dA = Math.min(0.35, (H * 0.18 - l7FdRidingPlat.sy) / (H * 0.18) * 0.35);
+      ctx.fillStyle = `rgba(255,60,40,${dA})`;
+      ctx.fillRect(0, 0, W, H * 0.08);
+    }
+
+    // Left/right side tap indicators (subtle)
+    const tapA = 0.06;
+    const sideG = ctx.createLinearGradient(0, 0, W * 0.18, 0);
+    sideG.addColorStop(0, `rgba(180,200,255,${tapA})`); sideG.addColorStop(1, 'rgba(180,200,255,0)');
+    ctx.fillStyle = sideG; ctx.fillRect(0, 0, W * 0.18, H);
+    const sideGR = ctx.createLinearGradient(W, 0, W * 0.82, 0);
+    sideGR.addColorStop(0, `rgba(180,200,255,${tapA})`); sideGR.addColorStop(1, 'rgba(180,200,255,0)');
+    ctx.fillStyle = sideGR; ctx.fillRect(W * 0.82, 0, W * 0.18, H);
+
+    // Vignette
+    const vg = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.4, W/2, H/2, Math.max(W,H)*0.82);
+    vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(4,10,24,0.55)');
+    ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  }
+
+  function drawL7NightPlatSection(x1: number, x2: number, sy: number) {
+    const w = x2 - x1; if (w <= 0) return;
+    const ph = L7_FD_PLAT_H;
+    ctx.fillStyle = '#2c2622'; ctx.fillRect(x1, sy, w, ph);
+    ctx.fillStyle = '#443a34'; ctx.fillRect(x1, sy, w, 5);
+    ctx.fillStyle = '#152010'; ctx.fillRect(x1, sy, w, ph * 0.55);
+    ctx.fillStyle = '#213218'; ctx.fillRect(x1, sy, w, ph * 0.22);
+    ctx.fillStyle = 'rgba(160,200,140,0.07)'; ctx.fillRect(x1, sy, w, ph * 0.55);
+  }
+
+  function drawL7Ball(x: number, y: number, spin: number, vy: number) {
     const r = L7_BALL_R;
-    const spin = (l7WorldY / 58) % TAU; // rotation angle from scrolling
-
-    // Outer glow (dress-tinted)
-    const dressCol = custom.dress ?? '#1a1320';
     const og = ctx.createRadialGradient(x, y, 0, x, y, r * 3.0);
-    og.addColorStop(0, 'rgba(255,111,156,0.30)');
-    og.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = og; ctx.fillRect(x - r*3, y - r*3, r*6, r*6);
+    og.addColorStop(0, 'rgba(255,111,156,0.22)'); og.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = og; ctx.fillRect(x-r*3, y-r*3, r*6, r*6);
 
-    // ── Clip everything to ball circle ──
+    // Drop shadow
+    ctx.globalAlpha = 0.18; ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.beginPath(); ctx.ellipse(x, y + r + 3, r * 0.75, 4, 0, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 1;
+
     ctx.save();
     ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.clip();
     ctx.translate(x, y); ctx.rotate(spin);
-
-    // Base fill = dress colour
-    ctx.fillStyle = dressCol;
-    ctx.fillRect(-r, -r, r*2, r*2);
-
-    // Dress-trim accent band (wraps around like a belt)
-    ctx.fillStyle = custom.dressTrim ?? '#f7d8e0';
-    ctx.globalAlpha = 0.55;
-    ctx.fillRect(-r, -r*0.08, r*2, r*0.20);
-    ctx.globalAlpha = 1;
-
-    // Hair fills upper ~55 % of ball (character curled with hair on top)
+    ctx.fillStyle = custom.dress ?? '#1a1320'; ctx.fillRect(-r, -r, r*2, r*2);
+    ctx.fillStyle = custom.dressTrim ?? '#f7d8e0'; ctx.globalAlpha = 0.50;
+    ctx.fillRect(-r, -r*0.10, r*2, r*0.22); ctx.globalAlpha = 1;
     ctx.fillStyle = custom.hair ?? '#c87840';
-    ctx.beginPath();
-    ctx.arc(0, 0, r, Math.PI, TAU); // upper semicircle
-    ctx.lineTo(r, 0); ctx.lineTo(-r, 0);
-    ctx.closePath(); ctx.fill();
-
-    // Hair mid-tone shadow on left-upper quarter
-    ctx.fillStyle = custom.hairMid ?? '#b06828';
-    ctx.globalAlpha = 0.55;
-    ctx.beginPath();
-    ctx.arc(0, 0, r, Math.PI, Math.PI * 1.55);
-    ctx.lineTo(0, 0); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, r, Math.PI, TAU);
+    ctx.lineTo(r, 0); ctx.lineTo(-r, 0); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = custom.hairMid ?? '#b06828'; ctx.globalAlpha = 0.50;
+    ctx.beginPath(); ctx.arc(0, 0, r, Math.PI, Math.PI*1.6); ctx.lineTo(0,0); ctx.closePath(); ctx.fill();
     ctx.globalAlpha = 1;
-
-    // Skin / face peek — small circle low-centre of ball
     ctx.fillStyle = custom.skin ?? '#f4d2b8';
-    ctx.beginPath(); ctx.arc(0, r * 0.18, r * 0.36, 0, TAU); ctx.fill();
-
-    ctx.restore(); // ── End clip ──
-
-    // ── Eyes (barely rotate — peering through the curl) ──
-    const eyeSpin = spin * 0.12;
-    ctx.save(); ctx.translate(x, y); ctx.rotate(eyeSpin);
-    ctx.fillStyle = '#2a1020';
-    const ps = Math.max(-2, Math.min(2, l7BallVX * 0.008));
-    ctx.beginPath();
-    ctx.arc(-5 + ps, r*0.14, 2.2, 0, TAU);
-    ctx.arc(5  + ps, r*0.14, 2.2, 0, TAU);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    ctx.beginPath(); ctx.arc(-6, r*0.10, 0.9, 0, TAU); ctx.arc(4, r*0.10, 0.9, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, r*0.20, r*0.34, 0, TAU); ctx.fill();
     ctx.restore();
 
-    // ── Dress-accent ring (thin outline, fixed) ──
-    ctx.strokeStyle = custom.dressAccent ?? '#c0394a';
-    ctx.lineWidth = 2; ctx.globalAlpha = 0.55;
-    ctx.beginPath(); ctx.arc(x, y, r - 1.5, 0, TAU); ctx.stroke();
-    ctx.globalAlpha = 1;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(spin * 0.10);
+    ctx.fillStyle = '#2a1020';
+    ctx.beginPath(); ctx.arc(-4.5, r*0.16, 2.0, 0, TAU); ctx.arc(4.5, r*0.16, 2.0, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.65)';
+    ctx.beginPath(); ctx.arc(-5.5, r*0.12, 0.8, 0, TAU); ctx.arc(3.5, r*0.12, 0.8, 0, TAU); ctx.fill();
+    ctx.restore();
 
-    // ── Hair speed-streaks flying out when moving laterally ──
-    const spd = Math.abs(l7BallVX);
-    if (spd > 55) {
-      const dir = l7BallVX > 0 ? -1 : 1;
-      ctx.strokeStyle = custom.hair ?? '#c87840';
-      ctx.lineCap = 'round';
-      // Exit point: from the hair-side of the spinning ball
-      const exitA = spin + (dir > 0 ? Math.PI * 0.9 : Math.PI * 0.1);
-      for (let i = 0; i < 4; i++) {
-        const len = Math.min(30, spd / 170 * (12 + i * 6));
-        ctx.lineWidth = 2.2 - i * 0.4;
-        ctx.globalAlpha = 0.60 - i * 0.12;
-        const ex = x + Math.cos(exitA + i * 0.18) * r;
-        const ey = y + Math.sin(exitA + i * 0.18) * r;
-        ctx.beginPath();
-        ctx.moveTo(ex, ey);
-        ctx.lineTo(ex + dir * len, ey + i * 1.5);
-        ctx.stroke();
+    ctx.strokeStyle = custom.dressAccent ?? '#c0394a'; ctx.lineWidth = 2; ctx.globalAlpha = 0.50;
+    ctx.beginPath(); ctx.arc(x, y, r-1.5, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1;
+
+    // Hair streaks when rising fast (pushed up by platform)
+    if (vy < -80) {
+      ctx.strokeStyle = custom.hair ?? '#c87840'; ctx.lineCap = 'round';
+      const exitA = spin + Math.PI * 1.5;
+      for (let i = 0; i < 3; i++) {
+        const len = Math.min(22, (-vy / 200) * (10 + i*5));
+        ctx.lineWidth = 2 - i*0.4; ctx.globalAlpha = 0.55 - i*0.14;
+        const ex = x + Math.cos(exitA + i*0.25) * r;
+        const ey = y + Math.sin(exitA + i*0.25) * r;
+        ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex, ey - len); ctx.stroke();
       }
       ctx.globalAlpha = 1; ctx.lineCap = 'butt'; ctx.lineWidth = 1;
     }
 
-    // ── Specular sheen (top-left) ──
-    ctx.fillStyle = 'rgba(255,255,255,0.22)';
-    ctx.beginPath(); ctx.ellipse(x - r*0.26, y - r*0.30, r*0.24, r*0.15, -0.5, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.20)';
+    ctx.beginPath(); ctx.ellipse(x-r*0.25, y-r*0.30, r*0.22, r*0.13, -0.5, 0, TAU); ctx.fill();
   }
 
   // ── Level 3 (Flappy) state & logic ────────────────────────────────────────
@@ -3063,8 +3404,9 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (gstate !== 'play') return;
     if (levelId === 3) { flVY = FL_FLAP_V; return; }
     if (levelId === 4 && fall4Phase === 'fall') return;
-    if (levelId === 5) return; // level 5 input via pointerDown
+    if (levelId === 5) return;
     if (levelId === 6) { l6Jump(); return; }
+    if (levelId === 7) { if (l7Phase === 'approach') l7ApPressJump(); return; }
     if (!player.alive) return;
     if (player.jumps < 2) {
       player.vy = player.jumps === 0 ? JUMP_VEL : JUMP_VEL * 0.86;
@@ -3078,6 +3420,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
 
   function releaseJump() {
     if (levelId === 6) { l6ReleaseJump(); return; }
+    if (levelId === 7) { if (l7Phase === 'approach') l7ApReleaseJump(); return; }
     if (levelId <= 2 || (levelId === 4 && fall4Phase === 'run')) {
       if (player.vy < 0 && player.holding) {
         const t = Math.min(1, player.holdTime / MAX_HOLD);
@@ -3098,11 +3441,15 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
       return;
     }
     if (levelId === 5) {
-      // Don't throw if tapping joystick zone (bottom-left 180px)
       if (!(x < 180 && y > H - 180)) throwMic(x, y);
       return;
     }
     if (levelId === 6) { l6Jump(); return; }
+    if (levelId === 7) {
+      if (l7Phase === 'approach') { l7ApPressJump(); return; }
+      if (l7Phase === 'falldown') { if (x < W / 2) l7FdHoldL = true; else l7FdHoldR = true; return; }
+      return;
+    }
     pressJump();
   }
 
@@ -3110,6 +3457,9 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (levelId === 4 && fall4Phase === 'fall') {
       if (x < W / 2) fallHoldL = Math.max(0, fallHoldL - 1);
       else            fallHoldR = Math.max(0, fallHoldR - 1);
+    } else if (levelId === 7) {
+      if (l7Phase === 'approach') l7ApReleaseJump();
+      else if (l7Phase === 'falldown') { l7FdHoldL = false; l7FdHoldR = false; }
     } else {
       releaseJump();
     }
@@ -3121,7 +3471,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   }
 
   function setTilt(gamma: number) {
-    if (levelId === 7) l7Tilt = gamma;
+    if (levelId === 7 && l7Phase === 'falldown') l7FdTilt = Math.max(-1, Math.min(1, gamma / 45));
   }
 
   function destroy() {
