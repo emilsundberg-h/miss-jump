@@ -238,7 +238,7 @@ export default function Game() {
 
       {tapHint && (
         <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", color: "rgba(255,255,255,0.7)", fontSize: 12, letterSpacing: "0.2em", textTransform: "uppercase", background: "rgba(20,14,26,0.4)", padding: "8px 16px", borderRadius: 99, backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", pointerEvents: "none", zIndex: 3 }}>
-          Tap or press space to jump · hold for higher jump
+          {levelId === 7 ? "Tryck vänster · höger för att styra · luta för tilt" : "Tap or press space to jump · hold for higher jump"}
         </div>
       )}
 
@@ -363,6 +363,20 @@ export default function Game() {
             : "Walk Miss Li into the glowing hole in the forest floor. She'll roll into a ball — then steer left and right to fall through the gaps before the platforms push you off the top!"
           }</Subtitle>
           <Cta onClick={pressJump}>Start the Show <Key>SPACE</Key></Cta>
+          {levelId === 7 && !tiltOk && (
+            <div onClick={e => e.stopPropagation()} style={{ marginTop: 10 }}>
+              <button
+                onClick={() => requestTilt()}
+                style={{
+                  background: "rgba(31,14,38,0.08)", border: "1.5px solid rgba(31,14,38,0.22)",
+                  borderRadius: 99, padding: "8px 18px", cursor: "pointer",
+                  fontSize: 13, color: "#6040a0", fontWeight: 600, letterSpacing: "0.04em",
+                }}
+              >
+                📱 Aktivera tiltstyrning (iPhone)
+              </button>
+            </div>
+          )}
           <div onClick={e => e.stopPropagation()}>
             <BackLink onClick={() => setLevelId(null)}>← Change Level</BackLink>
           </div>
