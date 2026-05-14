@@ -92,6 +92,7 @@ export default function Game() {
   const [tapHint,  setTapHint]  = useState(false);
   const [copied,   setCopied]   = useState(false);
   const [muted,    setMuted]    = useState(false);
+  const [easy,     setEasy]     = useState(false);
 
   // Persist character customisation
   useEffect(() => {
@@ -135,7 +136,7 @@ export default function Game() {
       },
       onProgress: pct => setProgress(pct),
       onScore:    n   => setScore(n),
-    }, levelId, custom);
+    }, levelId, custom, easy);
     controlRef.current = ctrl;
     return () => ctrl.destroy();
   }, [levelId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -225,9 +226,21 @@ export default function Game() {
       {/* ── Level selection ── */}
       <Overlay show={levelId === null} scrollable>
         <div style={{ maxWidth: 680, width: "100%", padding: "24px 12px 40px" }}>
-          <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ textAlign: "center", marginBottom: 20 }}>
             <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.28em", textTransform: "uppercase", color: "#b14a78", marginBottom: 8 }}>Choose Level</div>
-            <h1 style={{ fontFamily: '"Playfair Display", serif', fontWeight: 900, fontStyle: "italic", fontSize: "clamp(36px,6vw,64px)", lineHeight: 0.92, margin: "0 0 0", color: "#f7efe2" }}>Miss Jump</h1>
+            <h1 style={{ fontFamily: '"Playfair Display", serif', fontWeight: 900, fontStyle: "italic", fontSize: "clamp(36px,6vw,64px)", lineHeight: 0.92, margin: "0 0 16px", color: "#f7efe2" }}>Miss Jump</h1>
+            {/* Difficulty toggle */}
+            <div style={{ display: "inline-flex", background: "rgba(0,0,0,0.30)", borderRadius: 99, padding: 4, gap: 4 }}>
+              <button onClick={() => setEasy(false)} style={{
+                padding: "8px 22px", borderRadius: 99, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em",
+                background: !easy ? "#f7efe2" : "transparent", color: !easy ? "#1f0e26" : "rgba(255,255,255,0.55)", transition: "all 0.18s",
+              }}>Normal</button>
+              <button onClick={() => setEasy(true)} style={{
+                padding: "8px 22px", borderRadius: 99, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em",
+                background: easy ? "#a6e84a" : "transparent", color: easy ? "#1f0e26" : "rgba(255,255,255,0.55)", transition: "all 0.18s",
+              }}>Easy ⭐</button>
+            </div>
+            {easy && <div style={{ marginTop: 8, fontSize: 11, color: "rgba(166,232,74,0.85)", letterSpacing: "0.08em" }}>No spikes · Wider gaps · Slower speed</div>}
           </div>
 
           {/* Character customiser */}

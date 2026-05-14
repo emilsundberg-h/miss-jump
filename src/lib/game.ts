@@ -606,7 +606,7 @@ function renderMissLi(
 }
 
 // ===== Main factory =====
-export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId: 1|2|3|4|5|6 = 1, custom: CharCustom = DEFAULT_CUSTOM): GameControls {
+export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId: 1|2|3|4|5|6 = 1, custom: CharCustom = DEFAULT_CUSTOM, easy = false): GameControls {
   const ctx = canvas.getContext('2d')!;
   let DPR = 1, W = 0, H = 0;
 
@@ -737,8 +737,8 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
         loseGame(); return;
       }
 
-      // Spike collision
-      for (const s of spikeDefs) {
+      // Spike collision (skipped on easy)
+      if (!easy) for (const s of spikeDefs) {
         const px1 = player.x - PLAYER_W / 2 + 6, px2 = player.x + PLAYER_W / 2 - 6;
         const py1 = player.y, py2 = player.y + PLAYER_H - 4;
         if (px2 > s.x + 4 && px1 < s.x + SPIKE_W - 4 && py1 < s.y + SPIKE_H && py2 > s.y) {
@@ -1255,7 +1255,9 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   }
 
   function updateL6(dt: number) {
-    l6Speed = Math.min(L6_MAX_SPD, L6_BASE_SPD + l6Dist / 30);
+    l6Speed = easy
+      ? Math.min(480, 220 + l6Dist / 80)
+      : Math.min(L6_MAX_SPD, L6_BASE_SPD + l6Dist / 30);
     l6Dist += l6Speed * dt;
     l6RunT += dt;
     if (l6Flipping) {
@@ -1282,8 +1284,10 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
       const type = types[Math.floor(Math.random() * types.length)];
       const scale = 0.85 + Math.random() * 0.30;
       l6Obs.push({ x: W + 60, type, scale });
-      const minGap = Math.max(240, 680 - l6Speed * 0.52);
-      l6NextGap = minGap + Math.random() * 240;
+      const minGap = easy
+        ? Math.max(500, 900 - l6Speed * 0.60)
+        : Math.max(240, 680 - l6Speed * 0.52);
+      l6NextGap = minGap + Math.random() * (easy ? 500 : 240);
     }
 
     // Collision (AABB, slightly forgiving)
@@ -1721,19 +1725,23 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   }
 
   function updateFlappy(dt: number) {
-    const spd = FL_BASE_SPEED * Math.min(2, 1 + flScrollX / 4000);
+    const spdMul = easy ? Math.min(1.4, 1 + flScrollX / 8000) : Math.min(2, 1 + flScrollX / 4000);
+    const spd = FL_BASE_SPEED * spdMul;
     flScrollX += spd * dt;
     flVY += FL_GRAVITY * dt;
     flY  += flVY * dt;
     const PW = 30, PH = 50;
     if (flY < 0 || flY + PH > H) { loseGame(); return; }
+    const gapH = easy ? FL_GAP_H * 1.65 : FL_GAP_H;
     for (const o of FLAP_OBS_DEFS) {
       const sx = o.wx - flScrollX;
       if (sx + FL_OBS_W < 0 || sx > W) continue;
-      const gapY = o.gapFrac * H;
+      // On easy, centre the gap vertically so it doesn't drift to extreme edges
+      const rawGapY = o.gapFrac * H;
+      const gapY = easy ? Math.max(H * 0.12, Math.min(H - gapH - H * 0.12, rawGapY + (H - gapH) * 0.1)) : rawGapY;
       const px = W * 0.22;
       if (px + PW > sx && px < sx + FL_OBS_W) {
-        if (flY < gapY || flY + PH > gapY + FL_GAP_H) { loseGame(); return; }
+        if (flY < gapY || flY + PH > gapY + gapH) { loseGame(); return; }
       }
     }
     score = FLAP_OBS_DEFS.filter(o => o.wx < flScrollX + W * 0.22).length;
@@ -1802,10 +1810,13 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     ctx.globalAlpha = 1;
 
     // Obstacles
+    const drawGapH = easy ? FL_GAP_H * 1.65 : FL_GAP_H;
     for (const o of FLAP_OBS_DEFS) {
       const osx = o.wx - flScrollX;
       if (osx + FL_OBS_W < -10 || osx > W + 10) continue;
-      drawFlappyObstacle(osx, o.gapFrac * H);
+      const rawGapY = o.gapFrac * H;
+      const drawGapY = easy ? Math.max(H * 0.12, Math.min(H - drawGapH - H * 0.12, rawGapY + (H - drawGapH) * 0.1)) : rawGapY;
+      drawFlappyObstacle(osx, drawGapY, drawGapH);
     }
 
     // Stage at end
@@ -1822,7 +1833,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     ctx.restore();
   }
 
-  function drawFlappyObstacle(sx: number, gapY: number) {
+  function drawFlappyObstacle(sx: number, gapY: number, gapH = FL_GAP_H) {
     const C1 = CLOUD_PAL.platformMid, C2 = CLOUD_PAL.platformSurf;
     // Top bank
     if (gapY > 0) {
@@ -1840,7 +1851,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
       }
     }
     // Bottom bank
-    const botY = gapY + FL_GAP_H;
+    const botY = gapY + gapH;
     if (botY < H) {
       ctx.fillStyle = C1; ctx.fillRect(sx, botY, FL_OBS_W, H - botY);
       ctx.fillStyle = C2;
@@ -2410,6 +2421,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   }
 
   function drawSpikes() {
+    if (easy) return; // no spikes on easy mode
     const gy = groundY();
     const isCloud = levelId === 2 || (levelId === 4 && fall4Phase === 'run');
     for (const s of spikeDefs) {
