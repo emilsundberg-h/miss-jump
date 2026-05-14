@@ -74,6 +74,18 @@ const FALL_SIDE_SPD  = 260;   // px/s horizontal
 const FALL_OBS_H     = 60;    // obstacle cloud thickness
 const FALL_WIN_Y     = 10800;
 
+// ── Level 6: Tivoli roller-skate runner ────────────────────────────────────
+const L6_GRAVITY    = 2200;
+const L6_JUMP_VEL   = -760;
+const L6_JUMP_BOOST = -1400;
+const L6_MAX_HOLD   = 0.18;
+const L6_CUT_MIN    = 0.45;
+const L6_BASE_SPD   = 420;   // starting scroll speed px/s
+const L6_MAX_SPD    = 820;   // cap px/s
+const L6_WIN_DIST   = 45000; // px — displayed as 4500 m
+const L6_GROUND_F   = 0.82;  // groundY = H * L6_GROUND_F
+const L6_PLAYER_XF  = 0.18;  // fixed player screen-X fraction
+
 const TAU = Math.PI * 2;
 
 // Pre-generated scenery for Flappy level (world-space coords 0..FL_WIN_DIST*1.1)
@@ -594,7 +606,7 @@ function renderMissLi(
 }
 
 // ===== Main factory =====
-export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId: 1|2|3|4|5 = 1, custom: CharCustom = DEFAULT_CUSTOM): GameControls {
+export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId: 1|2|3|4|5|6 = 1, custom: CharCustom = DEFAULT_CUSTOM): GameControls {
   const ctx = canvas.getContext('2d')!;
   let DPR = 1, W = 0, H = 0;
 
@@ -654,6 +666,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (levelId === 3) { startFlappy(); return; }
     if (levelId === 4) { startFall4(); return; }
     if (levelId === 5) { startLevel5(); return; }
+    if (levelId === 6) { startL6(); return; }
     gstate = 'play'; score = 0;
     player.x = 120; player.y = 0; player.vx = MOVE_SPEED; player.vy = 0;
     player.onGround = true; player.jumps = 0; player.alive = true;
@@ -688,6 +701,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (levelId === 3) { if (gstate === 'play') updateFlappy(dt); return; }
     if (levelId === 4 && fall4Phase === 'fall') { if (gstate === 'play') updateFalling(dt); return; }
     if (levelId === 5) { if (gstate === 'play') updateLevel5(dt); return; }
+    if (levelId === 6) { if (gstate === 'play') updateL6(dt); return; }
     // Level 4 runner phase falls through to the normal platform runner below
     if (gstate === 'play') {
       // Speed ramps up progressively with distance (1× → 2× over the level)
@@ -1199,6 +1213,488 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
       ctx.fillStyle = '#fff'; ctx.textAlign = 'right';
       ctx.fillText(`On stage: ${alive}`, sx + sw - 12, 31);
     }
+  }
+
+  // ── Level 6: Tivoli roller-skate runner ───────────────────────────────────
+  interface L6Obs { x: number; type: 'cotton'|'iceCream'|'popcorn'; scale: number }
+  let l6Dist    = 0;
+  let l6Speed   = L6_BASE_SPD;
+  let l6PY      = 0;      // upward offset from ground (0 = on ground)
+  let l6PVY     = 0;      // vertical velocity (negative = moving up)
+  let l6Holding = false;
+  let l6HoldT   = 0;
+  let l6RunT    = 0;
+  let l6Obs: L6Obs[] = [];
+  let l6NextGap = 800;    // px until next obstacle spawns
+
+  function startL6() {
+    l6Dist = 0; l6Speed = L6_BASE_SPD;
+    l6PY = 0; l6PVY = 0; l6Holding = false; l6HoldT = 0; l6RunT = 0;
+    l6Obs = []; l6NextGap = 900 + Math.random() * 600;
+    score = 0; gstate = 'play';
+    cb.onStateChange('play'); cb.onScore(0); cb.onProgress(0);
+  }
+
+  function l6Jump() {
+    if (gstate !== 'play') return;
+    if (l6PY > 2) return; // already in air
+    l6PVY = L6_JUMP_VEL;
+    l6Holding = true; l6HoldT = 0;
+  }
+
+  function l6ReleaseJump() {
+    if (l6Holding && l6PVY < 0) {
+      const t = Math.min(1, l6HoldT / L6_MAX_HOLD);
+      l6PVY *= L6_CUT_MIN + (1 - L6_CUT_MIN) * t;
+    }
+    l6Holding = false;
+  }
+
+  function updateL6(dt: number) {
+    l6Speed = Math.min(L6_MAX_SPD, L6_BASE_SPD + l6Dist / 30);
+    l6Dist += l6Speed * dt;
+    l6RunT += dt;
+
+    // Vertical physics
+    if (l6Holding && l6HoldT < L6_MAX_HOLD && l6PVY < 0) {
+      l6PVY += L6_JUMP_BOOST * dt; l6HoldT += dt;
+    }
+    l6PVY += L6_GRAVITY * dt;
+    l6PY  -= l6PVY * dt;
+    if (l6PY <= 0) { l6PY = 0; l6PVY = 0; l6Holding = false; }
+
+    // Scroll obstacles
+    for (const o of l6Obs) o.x -= l6Speed * dt;
+    l6Obs = l6Obs.filter(o => o.x > -120);
+
+    // Spawn
+    l6NextGap -= l6Speed * dt;
+    if (l6NextGap <= 0) {
+      const types: L6Obs['type'][] = ['cotton','cotton','iceCream','iceCream','popcorn'];
+      const type = types[Math.floor(Math.random() * types.length)];
+      const scale = 0.85 + Math.random() * 0.30;
+      l6Obs.push({ x: W + 60, type, scale });
+      const minGap = Math.max(240, 680 - l6Speed * 0.52);
+      l6NextGap = minGap + Math.random() * 240;
+    }
+
+    // Collision (AABB, slightly forgiving)
+    const gY  = H * L6_GROUND_F;
+    const pX  = W * L6_PLAYER_XF;
+    const feet = l6PY; // above ground
+    for (const o of l6Obs) {
+      const hw = o.type === 'popcorn' ? 14 : 12;
+      const hitH = (o.type === 'cotton' ? 58 : o.type === 'iceCream' ? 52 : 16) * o.scale;
+      if (Math.abs(o.x - pX) < hw * o.scale + 8 && feet < hitH) {
+        loseGame(); return;
+      }
+    }
+
+    score = Math.floor(l6Dist / 10);
+    cb.onScore(score);
+    cb.onProgress(Math.min(1, l6Dist / L6_WIN_DIST));
+    if (l6Dist >= L6_WIN_DIST) winGame();
+  }
+
+  // ── Level 6 drawing ────────────────────────────────────────────────────────
+  function drawL6() {
+    const gY   = H * L6_GROUND_F;
+    const pX   = W * L6_PLAYER_XF;
+    const t    = performance.now() / 1000;
+    const scrX = l6Dist; // total scroll distance
+
+    // Evening sky gradient — deep indigo top, twilight purple mid, warm horizon glow
+    const sg = ctx.createLinearGradient(0, 0, 0, H);
+    sg.addColorStop(0, '#0e0a28'); sg.addColorStop(0.45, '#4a1a60'); sg.addColorStop(0.80, '#a03040'); sg.addColorStop(1, '#c85830');
+    ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H);
+
+    // Stars
+    ctx.fillStyle = '#fff8f4';
+    const starSeeds = [0.07,0.14,0.23,0.31,0.42,0.51,0.60,0.69,0.78,0.87,0.93,0.11,0.38,0.65,0.82];
+    const starR     = [1.0,0.7,1.2,0.8,1.0,0.6,1.1,0.9,0.7,1.3,0.8,1.0,0.7,1.2,0.9];
+    for (let i = 0; i < starSeeds.length; i++) {
+      const twinkle = 0.5 + 0.5 * Math.sin(t * 1.8 + i * 2.1);
+      ctx.globalAlpha = twinkle * 0.85;
+      ctx.beginPath(); ctx.arc(starSeeds[i] * W, (0.04 + (i % 5) * 0.06) * H, starR[i], 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Moon (upper left)
+    const moonX = W * 0.12, moonY = H * 0.11, moonR = Math.min(28, H * 0.04);
+    const moonG = ctx.createRadialGradient(moonX, moonY, 0, moonX, moonY, moonR * 2.5);
+    moonG.addColorStop(0, 'rgba(255,245,220,0.45)'); moonG.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = moonG; ctx.fillRect(moonX - moonR*3, moonY - moonR*3, moonR*6, moonR*6);
+    ctx.fillStyle = '#f5e8d0'; ctx.beginPath(); ctx.arc(moonX, moonY, moonR, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#4a1a60'; ctx.beginPath(); ctx.arc(moonX + moonR*0.3, moonY - moonR*0.1, moonR*0.85, 0, TAU); ctx.fill();
+
+    // Horizon glow (fairground light spilling up)
+    const hgY = gY * 0.88;
+    const hg = ctx.createLinearGradient(0, hgY, 0, gY);
+    hg.addColorStop(0, 'rgba(255,140,60,0)'); hg.addColorStop(1, 'rgba(255,140,60,0.18)');
+    ctx.fillStyle = hg; ctx.fillRect(0, hgY, W, gY - hgY);
+
+    // Silhouette clouds (dark, barely visible against sky)
+    ctx.fillStyle = 'rgba(30,10,50,0.55)';
+    const cSeeds = [0.08,0.32,0.55,0.78,0.18,0.62,0.91];
+    const cWidths = [160,220,130,180,200,140,170];
+    for (let i = 0; i < cSeeds.length; i++) {
+      const cx2 = ((cSeeds[i] * W * 3 - scrX * 0.05) % (W * 1.5) + W * 1.5) % (W * 1.5) - W * 0.25;
+      const cy2 = H * (0.08 + (i % 3) * 0.07);
+      const cw = cWidths[i];
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      ctx.ellipse(cx2, cy2, cw * 0.5, cw * 0.18, 0, 0, TAU);
+      ctx.ellipse(cx2 + cw * 0.28, cy2 - 8, cw * 0.34, cw * 0.14, 0, 0, TAU);
+      ctx.ellipse(cx2 - cw * 0.28, cy2 + 4, cw * 0.30, cw * 0.12, 0, 0, TAU);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Distant mountains — dark silhouette against the twilight sky
+    ctx.fillStyle = '#1a0e30';
+    ctx.beginPath();
+    const mOff = -(scrX * 0.08) % (W * 2);
+    for (let mx = mOff - W; mx < W + 200; mx += W * 2) {
+      ctx.moveTo(mx, gY * 0.72);
+      ctx.lineTo(mx + W * 0.22, gY * 0.42); ctx.lineTo(mx + W * 0.40, gY * 0.58);
+      ctx.lineTo(mx + W * 0.58, gY * 0.38); ctx.lineTo(mx + W * 0.78, gY * 0.52);
+      ctx.lineTo(mx + W, gY * 0.44); ctx.lineTo(mx + W * 1.2, gY * 0.62);
+      ctx.lineTo(mx + W * 2, gY * 0.72);
+    }
+    ctx.closePath(); ctx.fill();
+
+    // === Ferris wheel (far background, parallax 0.10) ===
+    const fwX = ((W * 0.15 - scrX * 0.10) % (W * 1.8) + W * 1.8) % (W * 1.8) - W * 0.1;
+    const fwR = Math.min(H * 0.18, 120);
+    const fwCY = gY - fwR * 1.05;
+    if (fwX > -fwR * 2 && fwX < W + fwR * 2) {
+      ctx.strokeStyle = '#2a1a30'; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(fwX - fwR*0.5, fwCY + fwR); ctx.lineTo(fwX, fwCY);
+      ctx.moveTo(fwX + fwR*0.5, fwCY + fwR); ctx.lineTo(fwX, fwCY); ctx.stroke();
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(fwX, fwCY, fwR, 0, TAU); ctx.stroke();
+      ctx.lineWidth = 1.5;
+      const fwAngle = t * 0.3;
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * TAU + fwAngle;
+        ctx.beginPath(); ctx.moveTo(fwX, fwCY);
+        ctx.lineTo(fwX + Math.cos(a)*fwR, fwCY + Math.sin(a)*fwR); ctx.stroke();
+        const carColors = ['#ff6f9c','#7ac4ea','#ffd470','#a6e84a','#c46cff','#ff9a4a'];
+        ctx.fillStyle = carColors[i % carColors.length];
+        ctx.beginPath();
+        ctx.arc(fwX + Math.cos(a)*fwR, fwCY + Math.sin(a)*fwR, 5, 0, TAU); ctx.fill();
+      }
+      ctx.fillStyle = '#fff2c4'; ctx.beginPath(); ctx.arc(fwX, fwCY, 7, 0, TAU); ctx.fill();
+    }
+
+    // === Roller coaster silhouette (parallax 0.13) ===
+    const rcOff = -(scrX * 0.13) % (W * 2.5);
+    ctx.strokeStyle = '#200c30'; ctx.lineWidth = 4; ctx.fillStyle = '#200c30';
+    for (let rx = rcOff - 80; rx < W + 300; rx += W * 2.5) {
+      const rcW = W * 0.55, rcH = H * 0.22, rcY = gY * 0.62;
+      // Supports
+      for (let si = 0; si <= 7; si++) {
+        const sx2 = rx + rcW * si / 7;
+        const trackY = rcY + Math.sin((si/7)*TAU*1.8)*rcH*0.5 + rcH*0.3;
+        ctx.fillRect(sx2 - 2, trackY, 4, gY - trackY);
+      }
+      // Track
+      ctx.beginPath();
+      for (let ti = 0; ti <= 80; ti++) {
+        const sx2 = rx + rcW * ti / 80;
+        const trackY = rcY + Math.sin((ti/80)*TAU*1.8)*rcH*0.5 + rcH*0.3;
+        ti === 0 ? ctx.moveTo(sx2, trackY) : ctx.lineTo(sx2, trackY);
+      }
+      ctx.stroke();
+    }
+    ctx.lineWidth = 1;
+
+    // === Trees — dark silhouette (parallax 0.22) ===
+    const treeOff = -(scrX * 0.22) % (W * 1.6);
+    const treeXs = [0.05,0.18,0.38,0.58,0.72,0.90,1.1,1.3,1.5];
+    for (const tf of treeXs) {
+      const tx2 = ((tf * W * 1.6 + treeOff) % (W * 1.6) + W * 1.6) % (W * 1.6) - W * 0.1;
+      const tH2 = H * 0.10;
+      ctx.fillStyle = '#0e0820';
+      ctx.beginPath();
+      ctx.moveTo(tx2, gY * 0.92); ctx.lineTo(tx2 - tH2*0.55, gY * 0.92);
+      ctx.lineTo(tx2, gY * 0.92 - tH2); ctx.lineTo(tx2 + tH2*0.55, gY * 0.92);
+      ctx.closePath(); ctx.fill();
+      ctx.fillRect(tx2 - 3, gY * 0.92, 6, H - gY * 0.92);
+    }
+
+    // === Booths (parallax 0.38) ===
+    const boothColors = ['#e84a4a','#4aa6d8','#ffb04a','#e84a4a','#c46cff','#4aa6d8'];
+    const boothW = 100, boothH = H * 0.14;
+    const boothSpacing = W * 0.38;
+    const boothOff = -(scrX * 0.38) % (boothSpacing * 6);
+    for (let bi = 0; bi < 8; bi++) {
+      const bx = bi * boothSpacing + boothOff - boothSpacing;
+      const bx2 = ((bx) % (boothSpacing * 6) + boothSpacing * 6) % (boothSpacing * 6) - boothSpacing;
+      if (bx2 < -boothW || bx2 > W + boothW) continue;
+      const bColor = boothColors[bi % boothColors.length];
+      const bY = gY - boothH;
+      // Body (slightly darker for evening)
+      ctx.fillStyle = bColor; ctx.globalAlpha = 0.85; ctx.fillRect(bx2 - boothW/2, bY, boothW, boothH); ctx.globalAlpha = 1;
+      // Striped awning
+      ctx.fillStyle = 'rgba(255,245,226,0.55)';
+      for (let si = 0; si < 4; si++) {
+        ctx.fillRect(bx2 - boothW/2 + si * (boothW/4), bY, boothW/8, boothH * 0.32);
+      }
+      // Glowing window
+      ctx.fillStyle = '#ffe08a'; ctx.fillRect(bx2 - 14, bY + boothH * 0.45, 28, 18);
+      const wg = ctx.createRadialGradient(bx2, bY + boothH * 0.54, 0, bx2, bY + boothH * 0.54, 40);
+      wg.addColorStop(0, 'rgba(255,210,100,0.30)'); wg.addColorStop(1, 'rgba(255,210,100,0)');
+      ctx.fillStyle = wg; ctx.fillRect(bx2 - 40, bY + boothH * 0.3, 80, 60);
+      // Roof triangle
+      ctx.fillStyle = bColor;
+      ctx.beginPath(); ctx.moveTo(bx2 - boothW/2 - 6, bY);
+      ctx.lineTo(bx2, bY - H * 0.05); ctx.lineTo(bx2 + boothW/2 + 6, bY);
+      ctx.closePath(); ctx.fill();
+    }
+
+    // === Lampposts (parallax 0.50) ===
+    const lampSpacing = W * 0.32;
+    const lampOff = -(scrX * 0.50) % (lampSpacing * 4);
+    for (let li = 0; li < 6; li++) {
+      const lx = li * lampSpacing + lampOff;
+      const lx2 = ((lx) % (lampSpacing * 4) + lampSpacing * 4) % (lampSpacing * 4) - lampSpacing * 0.5;
+      if (lx2 < -20 || lx2 > W + 20) continue;
+      const lampH = H * 0.20;
+      ctx.fillStyle = '#2a1a30';
+      ctx.fillRect(lx2 - 4, gY - lampH, 8, lampH);
+      ctx.beginPath(); ctx.arc(lx2, gY - lampH, 4, 0, TAU); ctx.fill();
+      // Lamp glow
+      ctx.fillStyle = '#ffd470'; ctx.beginPath(); ctx.arc(lx2, gY - lampH, 6, 0, TAU); ctx.fill();
+      const lg = ctx.createRadialGradient(lx2, gY - lampH, 0, lx2, gY - lampH, 80);
+      lg.addColorStop(0, 'rgba(255,220,120,0.20)'); lg.addColorStop(1, 'rgba(255,220,120,0)');
+      ctx.fillStyle = lg; ctx.fillRect(lx2 - 80, gY - lampH - 80, 160, 160);
+    }
+
+    // === Asphalt ground — dark evening road ===
+    const roadG = ctx.createLinearGradient(0, gY, 0, H);
+    roadG.addColorStop(0, '#1a1428'); roadG.addColorStop(1, '#060410');
+    ctx.fillStyle = roadG; ctx.fillRect(0, gY, W, H - gY);
+    ctx.fillStyle = '#5a3a18'; ctx.fillRect(0, gY - 5, W, 5); // curb
+    ctx.fillStyle = '#3a2010'; ctx.fillRect(0, gY, W, 2);
+    // Center dashes
+    const dashY = gY + (H - gY) * 0.45;
+    const dashW = 60; const dashGap = 50;
+    const dashOff = -(scrX % (dashW + dashGap));
+    ctx.fillStyle = 'rgba(255,242,196,0.7)';
+    for (let dx = dashOff - dashW; dx < W + dashW; dx += dashW + dashGap) {
+      ctx.fillRect(dx, dashY, dashW, 4);
+    }
+
+    // === Obstacles ===
+    for (const o of l6Obs) {
+      ctx.save(); ctx.translate(o.x, gY); ctx.scale(o.scale, o.scale);
+      drawL6Obstacle(o.type);
+      ctx.restore();
+    }
+
+    // === Skater ===
+    const onGround = l6PY < 2;
+    const pose = onGround ? 'skate' : (l6PVY < 0 ? 'jump' : 'fall');
+    const charY = gY - l6PY;
+    drawL6Skater(pX, charY, pose, l6RunT);
+
+    // === Speed lines (when fast) ===
+    if (l6Speed > 480) {
+      const alpha = Math.min(0.35, (l6Speed - 480) / 700);
+      ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+      ctx.lineWidth = 1.2;
+      for (let li = 0; li < 10; li++) {
+        const ly = gY * 0.2 + Math.sin(li * 1.9 + t) * gY * 0.55;
+        const llen = 40 + li * 12;
+        const lx = ((li * 137 + l6Dist * 0.8) % (W + 100)) - 50;
+        ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(lx - llen, ly); ctx.stroke();
+      }
+    }
+
+    // Vignette
+    const vg = ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.4, W/2,H/2,Math.max(W,H)*0.82);
+    vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(10,6,16,0.40)');
+    ctx.fillStyle = vg; ctx.fillRect(0,0,W,H);
+  }
+
+  function drawL6Obstacle(type: 'cotton'|'iceCream'|'popcorn') {
+    if (type === 'cotton') {
+      // Stick
+      ctx.fillStyle = '#e8e2d2';
+      ctx.beginPath(); ctx.moveTo(-5,0); ctx.lineTo(5,0); ctx.lineTo(2,-28); ctx.lineTo(-2,-28); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#c0394a'; ctx.lineWidth = 1.5;
+      for (let i=0;i<3;i++) { ctx.beginPath(); ctx.moveTo(-5+i,-4-i*8); ctx.lineTo(5-i,-2-i*8); ctx.stroke(); }
+      // Fluff
+      ctx.fillStyle = '#ffb6d4';
+      ctx.beginPath();
+      ctx.arc(0,-40,22,0,TAU); ctx.arc(-14,-36,16,0,TAU); ctx.arc(14,-36,16,0,TAU);
+      ctx.arc(-8,-52,16,0,TAU); ctx.arc(8,-52,16,0,TAU); ctx.arc(0,-58,14,0,TAU);
+      ctx.fill();
+      ctx.fillStyle = '#ffd6e8';
+      ctx.beginPath(); ctx.arc(-6,-50,8,0,TAU); ctx.arc(2,-42,6,0,TAU); ctx.fill();
+      ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.globalAlpha=0.9;
+      ctx.fillRect(-2,-56,1.5,1.5); ctx.fillRect(10,-44,1.5,1.5); ctx.fillRect(-12,-42,1.5,1.5);
+      ctx.globalAlpha=1;
+    } else if (type === 'iceCream') {
+      // Cone
+      ctx.fillStyle = '#d49860';
+      ctx.beginPath(); ctx.moveTo(-12,-22); ctx.lineTo(12,-22); ctx.lineTo(0,4); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle='#8a5e30'; ctx.lineWidth=0.8;
+      for (let i=-3;i<=3;i++) { ctx.beginPath(); ctx.moveTo(-12+i*2,-22); ctx.lineTo(-2+i*2,4); ctx.stroke(); }
+      for (let i=-3;i<=3;i++) { ctx.beginPath(); ctx.moveTo(12+i*2,-22); ctx.lineTo(2+i*2,4); ctx.stroke(); }
+      // Scoops
+      ctx.fillStyle='#ffb6c8'; ctx.beginPath(); ctx.arc(-5,-28,13,0,TAU); ctx.fill();
+      ctx.fillStyle='#fff2dc'; ctx.beginPath(); ctx.arc(7,-32,13,0,TAU); ctx.fill();
+      ctx.fillStyle='#a06a44'; ctx.beginPath(); ctx.arc(0,-46,12,0,TAU); ctx.fill();
+      ctx.fillStyle='rgba(255,255,255,0.4)';
+      ctx.beginPath(); ctx.arc(-9,-32,4,0,TAU); ctx.arc(3,-36,4,0,TAU); ctx.arc(-4,-50,4,0,TAU); ctx.fill();
+      // Cherry
+      ctx.fillStyle='#c0394a'; ctx.beginPath(); ctx.arc(0,-58,4,0,TAU); ctx.fill();
+      ctx.strokeStyle='#3e6a3a'; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.moveTo(0,-62); ctx.quadraticCurveTo(4,-68,8,-64); ctx.stroke();
+    } else { // popcorn
+      ctx.fillStyle='#c0394a';
+      ctx.beginPath(); ctx.moveTo(-16,-8); ctx.lineTo(16,-8); ctx.lineTo(12,12); ctx.lineTo(-12,12); ctx.closePath(); ctx.fill();
+      ctx.fillStyle='#fff5e8';
+      for (let i=-1;i<=1;i++) {
+        ctx.beginPath(); ctx.moveTo(-16+i*10+5,-8); ctx.lineTo(-16+i*10+10,-8);
+        ctx.lineTo(-12+i*8+8,12); ctx.lineTo(-12+i*8+5,12); ctx.closePath(); ctx.fill();
+      }
+      ctx.fillStyle='#fff5cc';
+      for (let i=0;i<8;i++) {
+        const a=(i/8)*TAU; ctx.beginPath(); ctx.arc(Math.cos(a)*12,-10+Math.sin(a)*6-6,6,0,TAU); ctx.fill();
+      }
+      ctx.beginPath(); ctx.arc(0,-16,8,0,TAU); ctx.arc(-6,-12,7,0,TAU); ctx.arc(6,-12,7,0,TAU); ctx.fill();
+      ctx.fillStyle='#ffd470'; ctx.beginPath(); ctx.arc(-3,-16,2,0,TAU); ctx.arc(5,-14,1.5,0,TAU); ctx.fill();
+    }
+  }
+
+  function drawL6Skater(cx: number, groundY: number, pose: string, runT: number) {
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.beginPath(); ctx.ellipse(cx, groundY + 4, 22, 5, 0, 0, TAU); ctx.fill();
+
+    const legSwing = pose === 'skate' ? Math.sin(runT * 5.5) * 0.35 : pose === 'jump' ? -0.5 : 0.3;
+    const armSwing = pose === 'skate' ? -Math.sin(runT * 5.5) * 0.4 : pose === 'jump' ? -0.8 : 0.4;
+    const lean = pose === 'skate' ? 0.12 : 0.04;
+
+    ctx.save();
+    ctx.translate(cx, groundY - 8);
+    ctx.rotate(lean);
+
+    // Roller skates (drawn first, lowest)
+    const skates = [{ ox: -6, sw: -legSwing * 0.6 }, { ox: 4, sw: legSwing * 0.6 }];
+    for (const sk of skates) {
+      ctx.save(); ctx.translate(sk.ox, -14); ctx.rotate(sk.sw);
+      ctx.fillStyle = '#fff5e8'; ctx.fillRect(-7, 18, 16, 9); // boot
+      ctx.fillStyle = '#ff6f9c'; ctx.fillRect(7, 20, 2, 7);   // toe
+      ctx.fillStyle = '#1f0e26'; ctx.fillRect(-9, 27, 20, 3); // sole
+      ctx.fillStyle = '#ffd470';
+      for (const wx of [-7,-2,3,8]) { ctx.beginPath(); ctx.arc(wx, 32, 2.5, 0, TAU); ctx.fill(); }
+      ctx.fillStyle = '#1f0e26';
+      for (const wx of [-7,-2,3,8]) { ctx.beginPath(); ctx.arc(wx, 32, 0.8, 0, TAU); ctx.fill(); }
+      ctx.restore();
+    }
+
+    // Legs
+    const skinC = custom.skin ?? '#f4d2b8';
+    for (const [ox, sw] of [[-6, -legSwing*0.6],[4, legSwing*0.6]]) {
+      ctx.save(); ctx.translate(ox, -14); ctx.rotate(sw as number);
+      ctx.fillStyle = skinC; ctx.fillRect(-4, 0, 8, 14); ctx.restore();
+    }
+
+    // Skirt/pants
+    const dressC = custom.dress ?? '#1a1320';
+    ctx.fillStyle = dressC;
+    ctx.beginPath(); ctx.moveTo(-12,-30); ctx.lineTo(12,-30); ctx.lineTo(16,-14); ctx.lineTo(-16,-14); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = custom.dressTrim ?? '#f7d8e0'; ctx.fillRect(-16,-15,32,2);
+
+    // Torso
+    ctx.fillStyle = dressC;
+    ctx.beginPath(); ctx.moveTo(-11,-48); ctx.lineTo(11,-48); ctx.lineTo(12,-30); ctx.lineTo(-12,-30); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = custom.dressAccent ?? '#c0394a'; ctx.fillRect(-12,-32,24,2);
+
+    // Arms
+    const armC = skinC;
+    ctx.save(); ctx.translate(-10,-46); ctx.rotate(armSwing*0.5);
+    ctx.fillStyle = armC; ctx.fillRect(-3,0,6,16); ctx.restore();
+    ctx.save(); ctx.translate(10,-46); ctx.rotate(-armSwing*0.5);
+    ctx.fillStyle = armC; ctx.fillRect(-3,0,6,16);
+    ctx.beginPath(); ctx.arc(0,16,3,0,TAU); ctx.fill(); ctx.restore();
+
+    const hairC = custom.hair    ?? '#c87840';
+    const hairM = custom.hairMid ?? '#b06828';
+    const hY = -61; // head center in local coords
+
+    // ── Neck ──
+    ctx.fillStyle = skinC; ctx.fillRect(-3,-52,6,5);
+
+    // ── Long hair falls — drawn BEFORE head so face shows through ──
+    if (custom.hairLength === 'long') {
+      ctx.fillStyle = hairC;
+      ctx.beginPath();
+      ctx.moveTo(-6, hY - 9);
+      ctx.bezierCurveTo(-22, hY - 3, -26, 8, -20, 36);
+      ctx.bezierCurveTo(-14, 46, -6, 40, -4, 32);
+      ctx.bezierCurveTo(-10, 18, -14, hY + 7, -8, hY + 3);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = hairM;
+      ctx.beginPath();
+      ctx.moveTo(-10, hY - 7);
+      ctx.bezierCurveTo(-18, hY - 1, -20, 10, -16, 32);
+      ctx.bezierCurveTo(-12, 40, -8, 38, -8, 28);
+      ctx.bezierCurveTo(-12, 14, -16, hY + 5, -12, hY);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = hairC;
+      ctx.beginPath();
+      ctx.moveTo(8, hY - 7);
+      ctx.bezierCurveTo(18, hY - 1, 18, 6, 14, 28);
+      ctx.bezierCurveTo(10, 40, 6, 36, 6, 26);
+      ctx.bezierCurveTo(10, 10, 14, hY + 5, 10, hY - 1);
+      ctx.closePath(); ctx.fill();
+    }
+
+    // ── Hair back volume — drawn BEFORE head so it peeks out behind face ──
+    ctx.fillStyle = hairC;
+    ctx.beginPath();
+    ctx.moveTo(-10, hY - 8);
+    ctx.bezierCurveTo(-18, hY - 4, -17, hY + 9, -12, hY + 9);
+    ctx.lineTo(8, hY + 9);
+    ctx.bezierCurveTo(17, hY + 5, 17, hY, 13, hY - 6);
+    ctx.bezierCurveTo(12, hY - 14, -10, hY - 16, -10, hY - 8);
+    ctx.closePath(); ctx.fill();
+    // Side wave
+    ctx.fillStyle = hairM;
+    ctx.beginPath();
+    ctx.moveTo(-11, hY + 2);
+    ctx.bezierCurveTo(-20, hY, -19, hY + 7, -13, hY + 9);
+    ctx.bezierCurveTo(-9, hY + 6, -10, hY + 2, -11, hY + 2);
+    ctx.closePath(); ctx.fill();
+
+    // ── Head (drawn AFTER back hair, BEFORE fringe) ──
+    ctx.fillStyle = custom.skin ?? '#f7d8be';
+    ctx.beginPath(); ctx.arc(0, hY, 10, 0, TAU); ctx.fill();
+
+    // ── Fringe / bangs — drawn ON TOP of head, only covers forehead area ──
+    ctx.fillStyle = hairM;
+    ctx.beginPath();
+    ctx.moveTo(-10, hY - 7);
+    ctx.bezierCurveTo(-8, hY - 16, 10, hY - 16, 11, hY - 7);
+    ctx.lineTo(5, hY - 9);
+    ctx.bezierCurveTo(2, hY - 6, -2, hY - 6, -5, hY - 9);
+    ctx.closePath(); ctx.fill();
+
+    // ── Eyes + mouth ──
+    ctx.fillStyle = '#2a1a20';
+    ctx.beginPath();
+    ctx.ellipse(-3, hY, 2, 1.5, 0, 0, TAU);
+    ctx.ellipse(3,  hY, 2, 1.5, 0, 0, TAU);
+    ctx.fill();
+    ctx.strokeStyle = '#c08060'; ctx.lineWidth = 1; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-2, hY + 5); ctx.lineTo(2, hY + 5); ctx.stroke();
+
+    ctx.restore();
   }
 
   // ── Level 3 (Flappy) state & logic ────────────────────────────────────────
@@ -1722,6 +2218,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (levelId === 4 && fall4Phase === 'run') { drawFall4Runner(); return; }
     if (levelId === 4) { drawFalling(); drawVignette(); return; }
     if (levelId === 5) { drawLevel5(); return; }
+    if (levelId === 6) { drawL6(); return; }
     if (levelId === 1) {
       drawSky(); drawSun(); drawClouds(); drawMountains();
       drawWaterfalls();
@@ -2254,6 +2751,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (levelId === 3) { flVY = FL_FLAP_V; return; }
     if (levelId === 4 && fall4Phase === 'fall') return;
     if (levelId === 5) return; // level 5 input via pointerDown
+    if (levelId === 6) { l6Jump(); return; }
     if (!player.alive) return;
     if (player.jumps < 2) {
       player.vy = player.jumps === 0 ? JUMP_VEL : JUMP_VEL * 0.86;
@@ -2266,6 +2764,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   }
 
   function releaseJump() {
+    if (levelId === 6) { l6ReleaseJump(); return; }
     if (levelId <= 2 || (levelId === 4 && fall4Phase === 'run')) {
       if (player.vy < 0 && player.holding) {
         const t = Math.min(1, player.holdTime / MAX_HOLD);
@@ -2290,6 +2789,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
       if (!(x < 180 && y > H - 180)) throwMic(x, y);
       return;
     }
+    if (levelId === 6) { l6Jump(); return; }
     pressJump();
   }
 
@@ -2300,6 +2800,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     } else {
       releaseJump();
     }
+    void x; void y;
   }
 
   function setJoystick(dx: number, dy: number) {

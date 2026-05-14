@@ -8,7 +8,7 @@ import {
   drawPreviewChar,
 } from "@/lib/game";
 
-type LevelId = 1 | 2 | 3 | 4 | 5;
+type LevelId = 1 | 2 | 3 | 4 | 5 | 6;
 
 // Volume targets per game state
 const VOL = { menu: 0.07 as number, play: 0.7 as number, dead: 0.07 as number };
@@ -66,7 +66,14 @@ export default function Game() {
   const music      = useMusic();
 
   const [levelId,  setLevelId]  = useState<LevelId | null>(null);
-  const [custom,   setCustom]   = useState<CharCustom>(DEFAULT_CUSTOM);
+  const [custom,   setCustom]   = useState<CharCustom>(() => {
+    try { const s = localStorage.getItem('mj_custom'); if (s) return { ...DEFAULT_CUSTOM, ...JSON.parse(s) }; } catch {}
+    return DEFAULT_CUSTOM;
+  });
+  const [bests,    setBests]    = useState<Record<number, number>>(() => {
+    try { const s = localStorage.getItem('mj_bests'); if (s) return JSON.parse(s); } catch {}
+    return {};
+  });
   const [state,    setState]    = useState<GameStateKind>("start");
   const [score,    setScore]    = useState(0);
   const [progress, setProgress] = useState(0);
@@ -74,6 +81,11 @@ export default function Game() {
   const [tries,    setTries]    = useState(1);
   const [tapHint,  setTapHint]  = useState(false);
   const [copied,   setCopied]   = useState(false);
+
+  // Persist character customisation
+  useEffect(() => {
+    try { localStorage.setItem('mj_custom', JSON.stringify(custom)); } catch {}
+  }, [custom]);
 
   // Adjust volume whenever game state changes
   useEffect(() => {
@@ -97,7 +109,18 @@ export default function Game() {
         setState(s);
         if (s === "play") { setTapHint(true); setTimeout(() => setTapHint(false), 3000); }
         if (data?.tries) setTries(data.tries);
-        if (s === "win" && data) setWinData({ score: data.score ?? 0, tries: data.tries ?? 1 });
+        if (s === "win" && data) {
+          const t = data.tries ?? 1;
+          setWinData({ score: data.score ?? 0, tries: t });
+          setBests(prev => {
+            if (!prev[levelId!] || t < prev[levelId!]) {
+              const next = { ...prev, [levelId!]: t };
+              try { localStorage.setItem('mj_bests', JSON.stringify(next)); } catch {}
+              return next;
+            }
+            return prev;
+          });
+        }
       },
       onProgress: pct => setProgress(pct),
       onScore:    n   => setScore(n),
@@ -172,8 +195,8 @@ export default function Game() {
       )}
 
       {/* ── Level selection ── */}
-      <Overlay show={levelId === null}>
-        <div style={{ maxWidth: 680, width: "100%", padding: "0 12px" }}>
+      <Overlay show={levelId === null} scrollable>
+        <div style={{ maxWidth: 680, width: "100%", padding: "24px 12px 40px" }}>
           <div style={{ textAlign: "center", marginBottom: 24 }}>
             <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.28em", textTransform: "uppercase", color: "#b14a78", marginBottom: 8 }}>Choose Level</div>
             <h1 style={{ fontFamily: '"Playfair Display", serif', fontWeight: 900, fontStyle: "italic", fontSize: "clamp(36px,6vw,64px)", lineHeight: 0.92, margin: "0 0 0", color: "#f7efe2" }}>Miss Jump</h1>
@@ -228,23 +251,26 @@ export default function Game() {
             </div>
           </div>
 
-          {/* Level cards — 2×2 grid */}
+          {/* Level cards — 2×3 grid */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, maxWidth: 560 }}>
             <LevelCard num={1} title="Forest Tour" description="Run on mossy platforms, jump over spikes and gaps." difficulty={2} mechanic="🏃 Jump"
               palette={{ bg: "linear-gradient(150deg,#1e2e14,#101e0e)", accent: "#85b84a", dot: "#a0c862", badge: "#3a6020" }}
-              onClick={() => setLevelId(1)} />
-            <LevelCard num={2} title="Cloud Tour" description="Jump between pink clouds and dodge lightning bolts." difficulty={3} mechanic="☁️ Jump"
+              best={bests[1]} onClick={() => setLevelId(1)} />
+            <LevelCard num={2} title="Cloud Tour" description="Jump between pink clouds, dodge grey spikes." difficulty={3} mechanic="☁️ Jump"
               palette={{ bg: "linear-gradient(150deg,#5a2050,#3a1038)", accent: "#ff9ec0", dot: "#ffd86b", badge: "#a04070" }}
-              onClick={() => setLevelId(2)} />
-            <LevelCard num={3} title="Miss Flappy" description="Tap to fly up and pass through gaps in the clouds." difficulty={2} mechanic="🪶 Tap = fly"
+              best={bests[2]} onClick={() => setLevelId(2)} />
+            <LevelCard num={3} title="Miss Flappy" description="Tap to fly up and pass through cloud gaps." difficulty={2} mechanic="🪶 Tap = fly"
               palette={{ bg: "linear-gradient(150deg,#204860,#102030)", accent: "#ffc5d2", dot: "#fff6fa", badge: "#904060" }}
-              onClick={() => setLevelId(3)} />
-            <LevelCard num={4} title="Free Fall" description="Clouds end — fall down and steer left or right to survive." difficulty={4} mechanic="↙↘ Steer"
+              best={bests[3]} onClick={() => setLevelId(3)} />
+            <LevelCard num={4} title="Free Fall" description="Clouds end — steer left or right as you plummet." difficulty={4} mechanic="↙↘ Steer"
               palette={{ bg: "linear-gradient(150deg,#0a1030,#050818)", accent: "#b8d0f0", dot: "#ffd9e6", badge: "#204080" }}
-              onClick={() => setLevelId(4)} />
+              best={bests[4]} onClick={() => setLevelId(4)} />
             <LevelCard num={5} title="Mic Drop" description="Top-down arena. Throw your mic at rival artists before they reach you." difficulty={3} mechanic="🎤 Throw mic"
               palette={{ bg: "linear-gradient(150deg,#2a1810,#160c06)", accent: "#ffd86b", dot: "#ff9ec0", badge: "#8a3a10" }}
-              onClick={() => setLevelId(5)} />
+              best={bests[5]} onClick={() => setLevelId(5)} />
+            <LevelCard num={6} title="Fairground" description="Roller-skate the amusement park. Jump over cotton candy, ice cream and popcorn — faster and faster!" difficulty={3} mechanic="⛸️ Jump"
+              palette={{ bg: "linear-gradient(150deg,#1a2a4a,#0e1830)", accent: "#ffd470", dot: "#ff9ec0", badge: "#4a6a20" }}
+              best={bests[6]} onClick={() => setLevelId(6)} />
           </div>
         </div>
       </Overlay>
@@ -252,17 +278,19 @@ export default function Game() {
       {/* ── In-game start ── */}
       <Overlay show={!!levelId && state === "start"} onClick={pressJump}>
         <TitleCard>
-          <Eyebrow>{["","Forest Tour · Act 1","Cloud Tour · Act 2","Miss Flappy · Act 3","Free Fall · Act 4","Mic Drop · Act 5"][levelId!]}</Eyebrow>
+          <Eyebrow>{["","Forest Tour · Act 1","Cloud Tour · Act 2","Miss Flappy · Act 3","Free Fall · Act 4","Mic Drop · Act 5","Fairground · Act 6"][levelId!]}</Eyebrow>
           <BigTitle>Miss Jump</BigTitle>
           <Subtitle>{levelId === 1
             ? "Jump over spikes and gaps. Reach the stage by the waterfall."
             : levelId === 2
-            ? "Hop between pink clouds. Watch out for lightning. Reach the sky stage."
+            ? "Hop between pink clouds. Watch out for spikes. Reach the sky stage."
             : levelId === 3
             ? "Tap to fly up. Pass through gaps in the clouds. Reach the stage."
             : levelId === 4
-            ? "Run until the clouds end — then steer left or right as you fall. Reach the stage below."
-            : "Top-down arena. Use the joystick to move. Tap the stage to throw your mic. Hit all 40 artists!"
+            ? "Run until the clouds end — then steer left or right as you fall."
+            : levelId === 5
+            ? "Top-down arena. Use the joystick to move. Tap the stage to throw your mic. Hit all 40 artists!"
+            : "Roller-skate the fairground. Tap to jump. Dodge cotton candy, ice cream and popcorn. It gets faster and faster!"
           }</Subtitle>
           <Cta onClick={pressJump}>Start the Show <Key>SPACE</Key></Cta>
           <div onClick={e => e.stopPropagation()}>
@@ -275,13 +303,13 @@ export default function Game() {
       <Overlay show={!!levelId && state === "lose"} onClick={pressJump}>
         <TitleCard>
           <div style={{ fontSize: 44, marginBottom: 6 }}>🎤</div>
-          <Eyebrow>Tappade taktkänslan</Eyebrow>
-          <BigTitle style={{ fontSize: "clamp(36px,5vw,60px)" }}>Tagning {tries + 1}?</BigTitle>
-          <Subtitle>Publiken väntar fortfarande. Ta sats igen.</Subtitle>
+          <Eyebrow>Lost the Beat</Eyebrow>
+          <BigTitle style={{ fontSize: "clamp(36px,5vw,60px)" }}>Take {tries + 1}?</BigTitle>
+          <Subtitle>The audience is still waiting. Give it another go.</Subtitle>
           <div style={{ margin: "4px 0 18px" }}>
-            <Stat label="Försök" value={String(tries)} />
+            <Stat label="Attempts" value={String(tries)} />
           </div>
-          <Cta onClick={pressJump}>Försök igen <Key>SPACE</Key></Cta>
+          <Cta onClick={pressJump}>Try Again <Key>SPACE</Key></Cta>
           <div onClick={e => e.stopPropagation()} style={{ marginTop: 10 }}>
             <DebugCopyRow
               levelId={levelId!}
@@ -290,12 +318,12 @@ export default function Game() {
               score={score}
               copied={copied}
               onCopy={() => {
-                const names = ["","Skogsturné","Molnturné","Miss Flappy","Fritt Fall"];
-                const txt = `Bana ${levelId} ${names[levelId!]} · Försök ${tries} · Dog vid ${Math.round(progress * 100)}% · Poäng ${score}`;
+                const names = ["","Forest Tour","Cloud Tour","Miss Flappy","Free Fall","Mic Drop","Fairground"];
+                const txt = `Level ${levelId} ${names[levelId!]} · Attempt ${tries} · Died at ${Math.round(progress * 100)}% · Score ${score}`;
                 navigator.clipboard.writeText(txt).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
               }}
             />
-            <BackLink onClick={() => setLevelId(null)}>← Byt bana</BackLink>
+            <BackLink onClick={() => setLevelId(null)}>← Change Level</BackLink>
           </div>
         </TitleCard>
       </Overlay>
@@ -485,10 +513,10 @@ function Swatch({ color, label, active, onClick }: { color: string; label: strin
 
 // ── Level card ───────────────────────────────────────────────────────────────
 
-function LevelCard({ num, title, description, difficulty, mechanic, palette, onClick }: {
+function LevelCard({ num, title, description, difficulty, mechanic, palette, best, onClick }: {
   num: number; title: string; description: string; difficulty: number; mechanic: string;
   palette: { bg: string; accent: string; dot: string; badge: string };
-  onClick: () => void;
+  best?: number; onClick: () => void;
 }) {
   return (
     <button onClick={onClick} style={{
@@ -505,20 +533,34 @@ function LevelCard({ num, title, description, difficulty, mechanic, palette, onC
       </div>
       <div style={{ fontFamily: '"Playfair Display", serif', fontWeight: 700, fontStyle: "italic", fontSize: 19, lineHeight: 1.1, marginBottom: 6, color: "#fff" }}>{title}</div>
       <div style={{ fontSize: 11, lineHeight: 1.55, color: "rgba(245,239,230,0.65)", marginBottom: 10 }}>{description}</div>
-      <div style={{ fontSize: 11, color: palette.accent, fontWeight: 700 }}>{mechanic} &nbsp;→</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ fontSize: 11, color: palette.accent, fontWeight: 700 }}>{mechanic} &nbsp;→</div>
+        {best !== undefined && (
+          <div style={{ fontSize: 9, color: palette.dot, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", opacity: 0.85 }}>
+            Best: {best} {best === 1 ? "try" : "tries"}
+          </div>
+        )}
+      </div>
     </button>
   );
 }
 
 // ── Shared overlays ──────────────────────────────────────────────────────────
 
-function Overlay({ show, children, onClick }: { show: boolean; children: React.ReactNode; onClick?: () => void }) {
+function Overlay({ show, children, onClick, scrollable }: {
+  show: boolean; children: React.ReactNode; onClick?: () => void; scrollable?: boolean;
+}) {
   return (
     <div onClick={onClick} style={{
-      position: "fixed", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      position: "fixed", inset: 0,
+      display: "flex", flexDirection: "column",
+      alignItems: "center",
+      justifyContent: scrollable ? "flex-start" : "center",
+      overflowY: scrollable ? "auto" : "hidden",
+      WebkitOverflowScrolling: scrollable ? ("touch" as React.CSSProperties["WebkitOverflowScrolling"]) : undefined,
       background: "radial-gradient(ellipse at center, rgba(20,14,26,0.55) 0%, rgba(8,6,12,0.78) 100%)",
       backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)",
-      zIndex: 10, textAlign: "center", padding: 16,
+      zIndex: 10, textAlign: "center",
       opacity: show ? 1 : 0, pointerEvents: show ? "auto" : "none",
       transition: "opacity 0.35s ease",
     }}>
