@@ -1761,7 +1761,9 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   }
 
   function updateL7(dt: number) {
-    l7Speed = Math.min(L7_MAX_SPD, L7_BASE_SPD + l7WorldY / 35);
+    const maxSpd = easy ? 400 : L7_MAX_SPD;
+    const ramp   = easy ? 60  : 35;
+    l7Speed = Math.min(maxSpd, L7_BASE_SPD + l7WorldY / ramp);
     l7WorldY += l7Speed * dt;
 
     // Lateral physics from tilt (dead zone ±4°)
@@ -1774,19 +1776,23 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (l7BallX - L7_BALL_R < 0)  { l7BallX = L7_BALL_R;      l7BallVX = Math.abs(l7BallVX) * 0.55; }
     if (l7BallX + L7_BALL_R > W)  { l7BallX = W - L7_BALL_R;  l7BallVX = -Math.abs(l7BallVX) * 0.55; }
 
-    // Block collision
+    // Block collision (easy = 45% wider gaps)
+    const gapMul = easy ? 1.45 : 1.0;
     const ballWorldY = l7WorldY + H * L7_BALL_YF;
     for (const b of L7_BLOCK_DEFS) {
       const top = b.wy, bot = b.wy + L7_BLOCK_H;
       if (ballWorldY + L7_BALL_R * 0.7 < top || ballWorldY - L7_BALL_R * 0.7 > bot) continue;
-      const gapL = b.gapFrac * W, gapR = (b.gapFrac + b.gapWFrac) * W;
+      const gapW = b.gapWFrac * W * gapMul;
+      const gapL = Math.max(0, b.gapFrac * W - (gapMul - 1) * b.gapWFrac * W * 0.5);
+      const gapR = gapL + gapW;
       if (l7BallX - L7_BALL_R * 0.65 < gapL || l7BallX + L7_BALL_R * 0.65 > gapR) {
         loseGame(); return;
       }
     }
 
-    // Crushing floor (rises; if ball's screen Y goes below danger threshold → die)
-    const floorRise = Math.min(H * 0.40, l7WorldY * 0.015);
+    // Crushing floor — accelerates with speed (starts slow, then rushes up)
+    const progress = Math.min(1, l7WorldY / L7_WIN_DIST);
+    const floorRise = Math.min(H * 0.46, H * progress * progress * (easy ? 0.28 : 0.46));
     const floorScreenY = H - floorRise;
     if (H * L7_BALL_YF + L7_BALL_R > floorScreenY) { loseGame(); return; }
 
@@ -1815,53 +1821,57 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
 
     // Blocks
     const ballWorldY = l7WorldY + H * L7_BALL_YF;
+    const drawGapMul = easy ? 1.45 : 1.0;
     for (const b of L7_BLOCK_DEFS) {
       const sY = b.wy - l7WorldY;
       if (sY + L7_BLOCK_H < -30 || sY > H + 30) continue;
-      const gapL = b.gapFrac * W, gapW = b.gapWFrac * W;
-      const dist  = Math.abs(b.wy - ballWorldY);
-      const hot   = dist < 260;
+      const gapWRaw = b.gapWFrac * W * drawGapMul;
+      const gapL2   = Math.max(0, b.gapFrac * W - (drawGapMul - 1) * b.gapWFrac * W * 0.5);
+      const gapW    = Math.min(gapWRaw, W - gapL2);
+      const dist    = Math.abs(b.wy - ballWorldY);
+      const hot     = dist < 260;
 
       // Block fill
       ctx.fillStyle = '#140820';
-      if (gapL > 0)         ctx.fillRect(0,          sY, gapL,          L7_BLOCK_H);
-      if (W - gapL - gapW > 0) ctx.fillRect(gapL + gapW, sY, W - gapL - gapW, L7_BLOCK_H);
+      if (gapL2 > 0)            ctx.fillRect(0,           sY, gapL2,           L7_BLOCK_H);
+      if (W - gapL2 - gapW > 0) ctx.fillRect(gapL2 + gapW, sY, W - gapL2 - gapW, L7_BLOCK_H);
 
       // Neon top-edge glow
       const neon = hot ? '#ff2060' : '#8a1040';
       ctx.shadowBlur = hot ? 18 : 8; ctx.shadowColor = neon;
       ctx.strokeStyle = neon; ctx.lineWidth = 2;
       ctx.beginPath();
-      if (gapL > 0)         { ctx.moveTo(0, sY);          ctx.lineTo(gapL, sY); }
-      if (W - gapL - gapW > 0) { ctx.moveTo(gapL + gapW, sY); ctx.lineTo(W, sY); }
+      if (gapL2 > 0)            { ctx.moveTo(0,            sY); ctx.lineTo(gapL2,            sY); }
+      if (W - gapL2 - gapW > 0) { ctx.moveTo(gapL2 + gapW, sY); ctx.lineTo(W,                sY); }
       ctx.stroke();
       ctx.shadowBlur = 0;
 
       // Gap safe-zone glow (cyan)
-      const gg = ctx.createLinearGradient(gapL, 0, gapL + gapW, 0);
+      const gg = ctx.createLinearGradient(gapL2, 0, gapL2 + gapW, 0);
       gg.addColorStop(0, 'rgba(60,200,255,0)');
       gg.addColorStop(0.5, hot ? 'rgba(60,200,255,0.14)' : 'rgba(60,200,255,0.07)');
       gg.addColorStop(1, 'rgba(60,200,255,0)');
-      ctx.fillStyle = gg; ctx.fillRect(gapL, sY, gapW, L7_BLOCK_H);
+      ctx.fillStyle = gg; ctx.fillRect(gapL2, sY, gapW, L7_BLOCK_H);
 
       // Gap edge lines
       ctx.strokeStyle = 'rgba(60,200,255,0.35)'; ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(gapL,          sY); ctx.lineTo(gapL,          sY + L7_BLOCK_H);
-      ctx.moveTo(gapL + gapW,   sY); ctx.lineTo(gapL + gapW,   sY + L7_BLOCK_H);
+      ctx.moveTo(gapL2,          sY); ctx.lineTo(gapL2,          sY + L7_BLOCK_H);
+      ctx.moveTo(gapL2 + gapW,   sY); ctx.lineTo(gapL2 + gapW,   sY + L7_BLOCK_H);
       ctx.stroke();
 
       // Particle sparks on edges (when near)
       if (hot && Math.random() < 0.3) {
-        const sx2 = Math.random() < 0.5 ? gapL : gapL + gapW;
+        const sx2 = Math.random() < 0.5 ? gapL2 : gapL2 + gapW;
         ctx.fillStyle = '#ff6090'; ctx.globalAlpha = 0.7;
         ctx.fillRect(sx2 + (Math.random()-0.5)*6, sY + Math.random()*L7_BLOCK_H, 2, 2);
         ctx.globalAlpha = 1;
       }
     }
 
-    // Rising danger floor
-    const floorRise = Math.min(H * 0.40, l7WorldY * 0.015);
+    // Rising danger floor — accelerates quadratically (progress²)
+    const prog = Math.min(1, l7WorldY / L7_WIN_DIST);
+    const floorRise = Math.min(H * 0.46, H * prog * prog * (easy ? 0.28 : 0.46));
     const floorY = H - floorRise;
     const fg = ctx.createLinearGradient(0, floorY - 60, 0, floorY);
     fg.addColorStop(0, 'rgba(255,20,60,0)');
@@ -1897,64 +1907,98 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
   }
 
+  // Miss Li rolled into a ball — uses her actual outfit, hair and skin colours
   function drawL7Ball(x: number, y: number) {
     const r = L7_BALL_R;
+    const spin = (l7WorldY / 58) % TAU; // rotation angle from scrolling
 
-    // Outer glow
-    const og = ctx.createRadialGradient(x, y, 0, x, y, r * 2.8);
-    og.addColorStop(0, 'rgba(255,111,156,0.35)');
-    og.addColorStop(1, 'rgba(255,111,156,0)');
-    ctx.fillStyle = og; ctx.fillRect(x-r*3, y-r*3, r*6, r*6);
+    // Outer glow (dress-tinted)
+    const dressCol = custom.dress ?? '#1a1320';
+    const og = ctx.createRadialGradient(x, y, 0, x, y, r * 3.0);
+    og.addColorStop(0, 'rgba(255,111,156,0.30)');
+    og.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = og; ctx.fillRect(x - r*3, y - r*3, r*6, r*6);
 
-    // Main sphere gradient
-    const sg = ctx.createRadialGradient(x-r*0.32, y-r*0.32, 0, x, y, r);
-    sg.addColorStop(0, '#ffd8ea');
-    sg.addColorStop(0.42, '#ff6f9c');
-    sg.addColorStop(1, '#7a0a2e');
-    ctx.fillStyle = sg;
-    ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+    // ── Clip everything to ball circle ──
+    ctx.save();
+    ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.clip();
+    ctx.translate(x, y); ctx.rotate(spin);
 
-    // Spinning seam lines (rotate with world scroll)
-    const angle = (l7WorldY / 55) % TAU;
-    ctx.save(); ctx.translate(x, y); ctx.rotate(angle);
-    ctx.strokeStyle = 'rgba(255,255,255,0.20)'; ctx.lineWidth = 1.5;
-    for (let i = 0; i < 3; i++) {
-      ctx.beginPath(); ctx.moveTo(0, -r*0.8); ctx.lineTo(0, r*0.8); ctx.stroke();
-      ctx.rotate(TAU / 3);
-    }
+    // Base fill = dress colour
+    ctx.fillStyle = dressCol;
+    ctx.fillRect(-r, -r, r*2, r*2);
+
+    // Dress-trim accent band (wraps around like a belt)
+    ctx.fillStyle = custom.dressTrim ?? '#f7d8e0';
+    ctx.globalAlpha = 0.55;
+    ctx.fillRect(-r, -r*0.08, r*2, r*0.20);
+    ctx.globalAlpha = 1;
+
+    // Hair fills upper ~55 % of ball (character curled with hair on top)
+    ctx.fillStyle = custom.hair ?? '#c87840';
+    ctx.beginPath();
+    ctx.arc(0, 0, r, Math.PI, TAU); // upper semicircle
+    ctx.lineTo(r, 0); ctx.lineTo(-r, 0);
+    ctx.closePath(); ctx.fill();
+
+    // Hair mid-tone shadow on left-upper quarter
+    ctx.fillStyle = custom.hairMid ?? '#b06828';
+    ctx.globalAlpha = 0.55;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, Math.PI, Math.PI * 1.55);
+    ctx.lineTo(0, 0); ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Skin / face peek — small circle low-centre of ball
+    ctx.fillStyle = custom.skin ?? '#f4d2b8';
+    ctx.beginPath(); ctx.arc(0, r * 0.18, r * 0.36, 0, TAU); ctx.fill();
+
+    ctx.restore(); // ── End clip ──
+
+    // ── Eyes (barely rotate — peering through the curl) ──
+    const eyeSpin = spin * 0.12;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(eyeSpin);
+    ctx.fillStyle = '#2a1020';
+    const ps = Math.max(-2, Math.min(2, l7BallVX * 0.008));
+    ctx.beginPath();
+    ctx.arc(-5 + ps, r*0.14, 2.2, 0, TAU);
+    ctx.arc(5  + ps, r*0.14, 2.2, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.beginPath(); ctx.arc(-6, r*0.10, 0.9, 0, TAU); ctx.arc(4, r*0.10, 0.9, 0, TAU); ctx.fill();
     ctx.restore();
 
-    // Eyes
-    ctx.fillStyle = '#fff5ee';
-    ctx.beginPath(); ctx.arc(x-6, y-5, 4.5, 0, TAU); ctx.arc(x+6, y-5, 4.5, 0, TAU); ctx.fill();
-    const pupilShift = Math.max(-2.5, Math.min(2.5, l7BallVX * 0.009));
-    ctx.fillStyle = '#2a1020';
-    ctx.beginPath(); ctx.arc(x-6+pupilShift, y-5, 2.2, 0, TAU); ctx.arc(x+6+pupilShift, y-5, 2.2, 0, TAU); ctx.fill();
-    // Eye gleam
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    ctx.beginPath(); ctx.arc(x-7, y-7, 1, 0, TAU); ctx.arc(x+5, y-7, 1, 0, TAU); ctx.fill();
+    // ── Dress-accent ring (thin outline, fixed) ──
+    ctx.strokeStyle = custom.dressAccent ?? '#c0394a';
+    ctx.lineWidth = 2; ctx.globalAlpha = 0.55;
+    ctx.beginPath(); ctx.arc(x, y, r - 1.5, 0, TAU); ctx.stroke();
+    ctx.globalAlpha = 1;
 
-    // Hair streaks when moving laterally
+    // ── Hair speed-streaks flying out when moving laterally ──
     const spd = Math.abs(l7BallVX);
-    if (spd > 50) {
+    if (spd > 55) {
       const dir = l7BallVX > 0 ? -1 : 1;
       ctx.strokeStyle = custom.hair ?? '#c87840';
       ctx.lineCap = 'round';
+      // Exit point: from the hair-side of the spinning ball
+      const exitA = spin + (dir > 0 ? Math.PI * 0.9 : Math.PI * 0.1);
       for (let i = 0; i < 4; i++) {
-        const len = Math.min(28, spd / 180 * (14 + i * 5));
-        ctx.lineWidth = 2 - i * 0.3;
-        ctx.globalAlpha = 0.6 - i * 0.12;
+        const len = Math.min(30, spd / 170 * (12 + i * 6));
+        ctx.lineWidth = 2.2 - i * 0.4;
+        ctx.globalAlpha = 0.60 - i * 0.12;
+        const ex = x + Math.cos(exitA + i * 0.18) * r;
+        const ey = y + Math.sin(exitA + i * 0.18) * r;
         ctx.beginPath();
-        ctx.moveTo(x + dir * r * 0.72, y - 4 + i * 3.5);
-        ctx.lineTo(x + dir * (r * 0.72 + len), y - 4 + i * 3.5);
+        ctx.moveTo(ex, ey);
+        ctx.lineTo(ex + dir * len, ey + i * 1.5);
         ctx.stroke();
       }
       ctx.globalAlpha = 1; ctx.lineCap = 'butt'; ctx.lineWidth = 1;
     }
 
-    // Specular highlight
-    ctx.fillStyle = 'rgba(255,255,255,0.24)';
-    ctx.beginPath(); ctx.ellipse(x-r*0.28, y-r*0.34, r*0.30, r*0.18, -0.5, 0, TAU); ctx.fill();
+    // ── Specular sheen (top-left) ──
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.beginPath(); ctx.ellipse(x - r*0.26, y - r*0.30, r*0.24, r*0.15, -0.5, 0, TAU); ctx.fill();
   }
 
   // ── Level 3 (Flappy) state & logic ────────────────────────────────────────
