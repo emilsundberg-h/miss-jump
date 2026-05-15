@@ -96,19 +96,20 @@ export default function Game() {
   const [tiltOk,   setTiltOk]   = useState(() => { try { return localStorage.getItem('mj_tilt') === 'granted'; } catch { return false; } });
   const [useTilt,  setUseTilt]  = useState(false);
 
-  // Device orientation → tilt (level 7, landscape-aware)
+  // Device orientation → tilt (level 7, all orientations)
   useEffect(() => {
     if (!tiltOk || !useTilt) return;
     const handler = (e: DeviceOrientationEvent) => {
-      // Compensate for landscape orientation: gamma is ~±90° when held horizontally,
-      // so use beta (the axis that reflects left/right tilt in landscape).
-      const angle = (typeof screen?.orientation?.angle !== 'undefined'
+      // gamma = rotation around device Y-axis.
+      // In portrait: gamma ≈ 0 at rest — works directly.
+      // In landscape: gamma ≈ ±90° constant offset. Subtract screen orientation
+      // angle to re-centre around 0 regardless of how the phone is rotated.
+      const raw = (typeof screen?.orientation?.angle !== 'undefined'
         ? screen.orientation.angle
         : (window as any).orientation ?? 0) as number;
-      let tilt: number;
-      if (angle === 90)              tilt = -(e.beta  ?? 0); // landscape: home right
-      else if (angle === -90 || angle === 270) tilt =  (e.beta  ?? 0); // landscape: home left
-      else                           tilt =  (e.gamma ?? 0); // portrait
+      const ori   = raw > 180 ? raw - 360 : raw; // 270 → -90
+      const gamma = e.gamma ?? 0;
+      const tilt  = Math.abs(ori) === 180 ? -gamma : gamma - ori;
       controlRef.current?.setTilt(tilt);
     };
     window.addEventListener('deviceorientation', handler);

@@ -3471,7 +3471,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   }
 
   function setTilt(gamma: number) {
-    if (levelId === 7 && l7Phase === 'falldown') l7FdTilt = Math.max(-1, Math.min(1, gamma / 45));
+    if (levelId === 7 && l7Phase === 'falldown') l7FdTilt = Math.max(-1, Math.min(1, gamma / 30));
   }
 
   function destroy() {
