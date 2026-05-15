@@ -1830,7 +1830,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     } else if (inHole) {
       l7ApOnGround = false;
       if (l7ApJumps === 0) l7ApJumps = 2;
-      if (l7ApY < -(H * 0.30)) {
+      if (l7ApY < -(H * 0.46)) {
         l7Phase = 'curl'; l7CurlT = 0;
         l7HoleCenterX = W * L7_HOLE_XF + W * L7_HOLE_WF * 0.5;
         l7FdBallX = W * 0.5; l7FdBallY = H * 0.22;
@@ -2042,46 +2042,51 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     const holeRight = holeLeft + W * L7_HOLE_WF;
     const holeCenter = (holeLeft + holeRight) / 2;
 
-    // Left ground section
-    drawL7GroundSection(-10, holeLeft, gy);
-    // Right ground section
-    drawL7GroundSection(holeRight, W + 10, gy);
-
-    // Darkness in hole (falling abyss)
-    const dg = ctx.createLinearGradient(0, gy, 0, gy + 55);
-    dg.addColorStop(0, 'rgba(0,0,0,0.70)'); dg.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = dg; ctx.fillRect(holeLeft, gy, holeRight - holeLeft, 55);
-
-    // Edge ferns at hole
-    drawFern(holeLeft - 6,  gy + 18 + 6, -1);
-    drawFern(holeRight + 4, gy + 18 + 6,  1);
-
-    // Bouncing arrow hint pointing into hole
-    const arrowT  = performance.now() / 1000;
-    const arrowY  = gy - 28 - Math.abs(Math.sin(arrowT * 2.4)) * 9;
-    ctx.fillStyle = 'rgba(255,210,80,0.65)';
-    ctx.beginPath();
-    ctx.moveTo(holeCenter,      arrowY + 16);
-    ctx.lineTo(holeCenter - 11, arrowY);
-    ctx.lineTo(holeCenter + 11, arrowY);
-    ctx.closePath(); ctx.fill();
-
-    // Character (only when above / at ground level)
-    if (l7ApY > -PLAYER_H * 0.6) {
-      const sx  = l7ApX;
-      const sy  = gy - l7ApY;
+    // Character drawn BEFORE ground sections — the ground rectangles will
+    // naturally cover the character below ground level except inside the hole,
+    // creating the effect of the figure sliding down into the pit.
+    if (l7ApY > -(H * 0.62)) {
+      const sx      = l7ApX;
+      const sy      = gy - l7ApY;
       const inAir   = !l7ApOnGround;
       const legSwing = inAir ? 0.5 : Math.sin(l7ApRunT) * 0.9;
       const armSwing = inAir ? -0.4 : Math.sin(l7ApRunT + Math.PI) * 0.7;
       const bounce   = inAir ? 0 : Math.abs(Math.sin(l7ApRunT * 0.5)) * -2;
-      ctx.fillStyle = 'rgba(0,0,0,0.20)';
-      ctx.beginPath(); ctx.ellipse(sx, gy + 2, 18, 5, 0, 0, TAU); ctx.fill();
+      if (l7ApY > -30) {
+        ctx.fillStyle = 'rgba(0,0,0,0.20)';
+        ctx.beginPath(); ctx.ellipse(sx, gy + 2, 18, 5, 0, 0, TAU); ctx.fill();
+      }
       ctx.save();
       ctx.translate(sx, sy + bounce);
       if (l7ApVX < 0) ctx.scale(-1, 1);
       ctx.rotate(inAir ? 0.05 : 0.08);
       renderMissLi(ctx, 0, 0, legSwing, armSwing, inAir, false, custom);
       ctx.restore();
+    }
+
+    // Ground sections — cover character below ground except in hole
+    drawL7GroundSection(-10, holeLeft, gy);
+    drawL7GroundSection(holeRight, W + 10, gy);
+
+    // Deep darkness inside hole
+    const dg = ctx.createLinearGradient(0, gy, 0, gy + 90);
+    dg.addColorStop(0, 'rgba(0,0,0,0.88)'); dg.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = dg; ctx.fillRect(holeLeft, gy, holeRight - holeLeft, 90);
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(holeLeft, gy + 90, holeRight - holeLeft, H - gy - 90);
+
+    // Edge ferns at hole
+    drawFern(holeLeft - 6,  gy + 18 + 6, -1);
+    drawFern(holeRight + 4, gy + 18 + 6,  1);
+
+    // Bouncing arrow hint (only while not yet in hole)
+    if (l7ApY >= 0) {
+      const arrowT = performance.now() / 1000;
+      const arrowY = gy - 28 - Math.abs(Math.sin(arrowT * 2.4)) * 9;
+      ctx.fillStyle = 'rgba(255,210,80,0.65)';
+      ctx.beginPath();
+      ctx.moveTo(holeCenter, arrowY + 16); ctx.lineTo(holeCenter - 11, arrowY); ctx.lineTo(holeCenter + 11, arrowY);
+      ctx.closePath(); ctx.fill();
     }
 
     drawVignette();
@@ -2211,44 +2216,93 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
 
   function drawL7NightBG() {
     const t = performance.now() / 1000;
+
+    // Deep space gradient
     const g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, '#040c1c'); g.addColorStop(0.55, '#06122a'); g.addColorStop(1, '#0c1e3e');
+    g.addColorStop(0, '#020810'); g.addColorStop(0.5, '#040c1e'); g.addColorStop(1, '#081630');
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-    // Stars
+
+    // Soft nebula glows
+    const n1 = ctx.createRadialGradient(W*0.18, H*0.22, 0, W*0.18, H*0.22, W*0.38);
+    n1.addColorStop(0, 'rgba(80,30,140,0.09)'); n1.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = n1; ctx.fillRect(0, 0, W, H);
+    const n2 = ctx.createRadialGradient(W*0.82, H*0.38, 0, W*0.82, H*0.38, W*0.32);
+    n2.addColorStop(0, 'rgba(20,70,120,0.08)'); n2.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = n2; ctx.fillRect(0, 0, W, H);
+    const n3 = ctx.createRadialGradient(W*0.50, H*0.10, 0, W*0.50, H*0.10, W*0.25);
+    n3.addColorStop(0, 'rgba(60,20,100,0.06)'); n3.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = n3; ctx.fillRect(0, 0, W, H);
+
+    // Regular stars (twinkling)
     for (const s of L7_STARS) {
-      const tw = 0.4 + 0.6 * Math.sin(t * 1.4 + s.phase);
-      ctx.globalAlpha = tw * 0.75; ctx.fillStyle = '#dde8ff';
-      ctx.beginPath(); ctx.arc(s.fx * W, s.fy * H, s.sr, 0, TAU); ctx.fill();
+      const tw = 0.45 + 0.55 * Math.sin(t * 1.3 + s.phase);
+      ctx.globalAlpha = tw * (0.55 + s.sr * 0.12);
+      ctx.fillStyle = s.sr > 1.4 ? '#fff8e0' : '#ccd8ff';
+      ctx.beginPath(); ctx.arc(s.fx * W, s.fy * H, s.sr * 0.9, 0, TAU); ctx.fill();
     }
     ctx.globalAlpha = 1;
-    // Moon
-    const mx = W * 0.80, my = H * 0.11, mr = Math.min(34, H * 0.047);
-    const mg = ctx.createRadialGradient(mx, my, 0, mx, my, mr * 3);
-    mg.addColorStop(0, 'rgba(190,210,255,0.42)'); mg.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = mg; ctx.fillRect(mx - mr*3, my - mr*3, mr*6, mr*6);
-    ctx.fillStyle = '#dde8ff'; ctx.beginPath(); ctx.arc(mx, my, mr, 0, TAU); ctx.fill();
-    ctx.fillStyle = '#b8cce8';
-    ctx.beginPath(); ctx.arc(mx + mr*0.30, my - mr*0.08, mr*0.86, 0, TAU); ctx.fill();
-    // Far tree silhouettes (camX=0)
-    ctx.fillStyle = '#020504';
-    const ftY = H * 0.72;
-    for (const tr of SCENERY.farTrees) {
-      const x = tr.x * 0.25; if (x + tr.w < -10 || x > W + 10) continue;
-      ctx.beginPath();
-      ctx.moveTo(x - tr.w/2, ftY);
-      ctx.bezierCurveTo(x - tr.w/2, ftY - tr.h*0.7, x, ftY - tr.h, x, ftY - tr.h);
-      ctx.bezierCurveTo(x, ftY - tr.h, x + tr.w/2, ftY - tr.h*0.7, x + tr.w/2, ftY);
-      ctx.closePath(); ctx.fill();
+
+    // Bright feature stars with cross-sparkle
+    const brightSeeds = [17, 53, 89, 127, 163, 199, 233, 271];
+    for (let i = 0; i < brightSeeds.length; i++) {
+      const bx = ((brightSeeds[i] * 173 + 41) % 920) / 920 * W;
+      const by = ((brightSeeds[i] * 137 + 29) % 560) / 560 * H * 0.60;
+      const sr = 1.8 + (i % 3) * 0.6;
+      const tw2 = 0.5 + 0.5 * Math.sin(t * 0.7 + i * 1.7);
+      ctx.globalAlpha = tw2 * 0.9;
+      ctx.strokeStyle = '#fff8e0'; ctx.lineWidth = 0.7;
+      ctx.beginPath(); ctx.moveTo(bx - sr*2.5, by); ctx.lineTo(bx + sr*2.5, by); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(bx, by - sr*2.5); ctx.lineTo(bx, by + sr*2.5); ctx.stroke();
+      ctx.fillStyle = '#fff8e0';
+      ctx.beginPath(); ctx.arc(bx, by, sr, 0, TAU); ctx.fill();
     }
-    ctx.fillStyle = '#030706';
-    const mtY = H * 0.78;
-    for (const tr of SCENERY.midTrees) {
-      const x = tr.x * 0.45; if (x + tr.w < -20 || x > W + 20) continue;
-      ctx.fillRect(x - 4, mtY - tr.h*0.4, 8, tr.h*0.4);
-      ctx.beginPath(); ctx.ellipse(x, mtY - tr.h*0.60, tr.w*0.50, tr.h*0.45, 0, 0, TAU); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(x - tr.w*0.25, mtY - tr.h*0.50, tr.w*0.35, tr.h*0.32, 0, 0, TAU); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(x + tr.w*0.25, mtY - tr.h*0.50, tr.w*0.35, tr.h*0.32, 0, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 1; ctx.lineWidth = 1;
+
+    // Shooting star (every ~9 s)
+    const shotT = t % 9.0;
+    if (shotT < 0.55) {
+      const prog = shotT / 0.55;
+      const seed = Math.floor(t / 9.0);
+      const sx0  = W * (0.05 + ((seed * 173) % 80) / 100);
+      const sy0  = H * (0.04 + ((seed * 137) % 40) / 100);
+      const ang  = 0.45 + ((seed * 89) % 30) / 100;
+      const len  = W * 0.20;
+      const ex   = sx0 + Math.cos(ang) * len * prog;
+      const ey   = sy0 + Math.sin(ang) * len * prog;
+      const tx2  = sx0 + Math.cos(ang) * len * Math.max(0, prog - 0.30);
+      const ty2  = sy0 + Math.sin(ang) * len * Math.max(0, prog - 0.30);
+      const sg   = ctx.createLinearGradient(tx2, ty2, ex, ey);
+      sg.addColorStop(0, 'rgba(255,255,220,0)');
+      sg.addColorStop(1, `rgba(255,255,220,${0.75 * (1 - prog)})`);
+      ctx.strokeStyle = sg; ctx.lineWidth = 1.8;
+      ctx.beginPath(); ctx.moveTo(tx2, ty2); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.lineWidth = 1;
     }
+
+    // Moon with halo + crescent
+    const mx = W * 0.80, my = H * 0.11, mr = Math.min(36, H * 0.05);
+    // Outer halo
+    const mhalo = ctx.createRadialGradient(mx, my, mr, mx, my, mr * 4.5);
+    mhalo.addColorStop(0, 'rgba(200,220,255,0.14)');
+    mhalo.addColorStop(0.4, 'rgba(180,200,255,0.05)');
+    mhalo.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = mhalo; ctx.fillRect(mx - mr*5, my - mr*5, mr*10, mr*10);
+    // Inner glow
+    const mglow = ctx.createRadialGradient(mx, my, 0, mx, my, mr * 2.2);
+    mglow.addColorStop(0, 'rgba(240,245,255,0.55)');
+    mglow.addColorStop(0.7, 'rgba(190,210,255,0.15)');
+    mglow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = mglow; ctx.fillRect(mx - mr*3, my - mr*3, mr*6, mr*6);
+    // Moon body
+    ctx.fillStyle = '#edf1ff'; ctx.beginPath(); ctx.arc(mx, my, mr, 0, TAU); ctx.fill();
+    // Crescent shadow
+    ctx.fillStyle = '#b0c0e0';
+    ctx.beginPath(); ctx.arc(mx + mr*0.28, my - mr*0.08, mr*0.86, 0, TAU); ctx.fill();
+    // Surface craters
+    ctx.save(); ctx.globalAlpha = 0.10; ctx.fillStyle = '#8090b8';
+    ctx.beginPath(); ctx.arc(mx - mr*0.12, my + mr*0.28, mr*0.16, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(mx + mr*0.08, my - mr*0.32, mr*0.10, 0, TAU); ctx.fill();
+    ctx.restore();
   }
 
   function drawL7Falldown() {
@@ -2478,6 +2532,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     ctx.beginPath(); ctx.ellipse(x, y + r + 3, r * 0.75, 4, 0, 0, TAU); ctx.fill();
     ctx.globalAlpha = 1;
 
+    // Ball interior — dress + hair (spinning)
     ctx.save();
     ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.clip();
     ctx.translate(x, y); ctx.rotate(spin);
@@ -2490,15 +2545,30 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     ctx.fillStyle = custom.hairMid ?? '#b06828'; ctx.globalAlpha = 0.50;
     ctx.beginPath(); ctx.arc(0, 0, r, Math.PI, Math.PI*1.6); ctx.lineTo(0,0); ctx.closePath(); ctx.fill();
     ctx.globalAlpha = 1;
-    ctx.fillStyle = custom.skin ?? '#f4d2b8';
-    ctx.beginPath(); ctx.arc(0, r*0.20, r*0.34, 0, TAU); ctx.fill();
     ctx.restore();
 
-    ctx.save(); ctx.translate(x, y); ctx.rotate(spin * 0.10);
+    // Face — barely rotates so it stays readable while the ball spins
+    ctx.save();
+    ctx.translate(x, y); ctx.rotate(spin * 0.04);
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.clip();
+    const fr = r * 0.42, fy = r * 0.10;
+    // Skin
+    ctx.fillStyle = custom.skin ?? '#f4d2b8';
+    ctx.beginPath(); ctx.arc(0, fy, fr, 0, TAU); ctx.fill();
+    // Cheeks
+    ctx.fillStyle = 'rgba(210,85,80,0.13)';
+    ctx.beginPath(); ctx.ellipse(-fr*0.56, fy+fr*0.18, fr*0.27, fr*0.19, 0, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.ellipse( fr*0.56, fy+fr*0.18, fr*0.27, fr*0.19, 0, 0, TAU); ctx.fill();
+    // Eyes
+    const eyeY = fy - fr * 0.10;
     ctx.fillStyle = '#2a1020';
-    ctx.beginPath(); ctx.arc(-4.5, r*0.16, 2.0, 0, TAU); ctx.arc(4.5, r*0.16, 2.0, 0, TAU); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.65)';
-    ctx.beginPath(); ctx.arc(-5.5, r*0.12, 0.8, 0, TAU); ctx.arc(3.5, r*0.12, 0.8, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(-fr*0.36, eyeY, fr*0.17, 0, TAU); ctx.arc(fr*0.36, eyeY, fr*0.17, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.80)';
+    ctx.beginPath(); ctx.arc(-fr*0.30, eyeY - fr*0.06, fr*0.07, 0, TAU); ctx.arc(fr*0.42, eyeY - fr*0.06, fr*0.07, 0, TAU); ctx.fill();
+    // Smile
+    ctx.strokeStyle = '#2a1020'; ctx.lineWidth = 1.5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(0, fy + fr*0.06, fr*0.32, 0.18, Math.PI - 0.18); ctx.stroke();
+    ctx.lineCap = 'butt'; ctx.lineWidth = 1;
     ctx.restore();
 
     ctx.strokeStyle = custom.dressAccent ?? '#c0394a'; ctx.lineWidth = 2; ctx.globalAlpha = 0.50;
