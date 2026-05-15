@@ -1724,14 +1724,20 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     ctx.fillStyle = custom.skin ?? '#f7d8be';
     ctx.beginPath(); ctx.arc(0, hY, 11, 0, TAU); ctx.fill();
 
-    // ── Fringe / bangs — drawn ON TOP of head, only covers forehead area ──
-    ctx.fillStyle = hairM;
+    // ── Fringe / bangs — identical to renderMissLi ──
+    ctx.fillStyle = hairC;
     ctx.beginPath();
-    ctx.moveTo(-10, hY - 7);
-    ctx.bezierCurveTo(-8, hY - 16, 10, hY - 16, 11, hY - 7);
-    ctx.lineTo(5, hY - 9);
-    ctx.bezierCurveTo(2, hY - 6, -2, hY - 6, -5, hY - 9);
+    ctx.moveTo(-10, hY - 5);
+    ctx.bezierCurveTo(-8, hY - 14, 8, hY - 14, 11, hY - 5);
+    ctx.lineTo(7, hY - 5);
+    ctx.bezierCurveTo(4, hY - 5, 0, hY - 5, -6, hY - 5);
     ctx.closePath(); ctx.fill();
+    // Crown highlight
+    ctx.fillStyle = custom.hairHi ?? '#e8c870';
+    ctx.beginPath(); ctx.ellipse(1, hY - 9, 4.5, 2.5, -0.3, 0, TAU); ctx.fill();
+    // Earring
+    ctx.fillStyle = '#f0d060';
+    ctx.beginPath(); ctx.arc(10, hY + 2, 2, 0, TAU); ctx.fill();
 
     // ── Face — matching renderMissLi ──
     // Blush
