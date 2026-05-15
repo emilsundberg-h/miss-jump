@@ -94,8 +94,8 @@ const L7_HOLE_XF      = 0.52;  // hole left edge fraction of W
 const L7_HOLE_WF      = 0.16;  // hole width fraction of W
 const L7_CURL_DUR     = 1.2;   // transition animation duration (s)
 const L7_FD_GRAVITY   = 1500;  // falldown ball gravity (px/s²)
-const L7_FD_BASE_SPD  = 300;   // initial platform scroll speed (px/s upward)
-const L7_FD_MAX_SPD   = 680;   // max platform scroll speed
+const L7_FD_BASE_SPD  = 200;   // initial platform scroll speed (px/s upward)
+const L7_FD_MAX_SPD   = 500;   // max platform scroll speed
 const L7_FD_H_SPEED   = 620;   // max horizontal ball speed
 const L7_FD_H_ACCEL   = 2200;  // horizontal acceleration
 const L7_FD_PLAT_H    = 24;    // platform physics/visual thickness
@@ -1887,8 +1887,11 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     const prevCX  = prevGX + prevGW / 2;
     const reach   = W * 0.28;
     // Pick a side opposite to where the previous gap was, then add jitter
-    const goRight = prevCX < W / 2;
-    const base    = goRight
+    // 72% → opposite side, 28% → same side as previous
+    const prevWasLeft = prevCX < W / 2;
+    const sameSide    = l7FdRand() < 0.28;
+    const goRight     = sameSide ? !prevWasLeft : prevWasLeft;
+    const base        = goRight
       ? W * 0.50 + l7FdRand() * W * 0.35   // right half
       : W * 0.08 + l7FdRand() * W * 0.35;  // left half
     const raw     = base - gW * 0.5;
@@ -1904,7 +1907,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
 
   function updateL7Falldown(dt: number) {
     l7FdTime += dt;
-    l7FdSpeed = Math.min(L7_FD_MAX_SPD, L7_FD_BASE_SPD + l7FdTime * 16);
+    l7FdSpeed = Math.min(L7_FD_MAX_SPD, L7_FD_BASE_SPD + l7FdTime * 11);
 
     // ── Horizontal ──────────────────────────────────────────────────────────
     const hAcc = L7_FD_H_ACCEL * dt;
@@ -3624,7 +3627,11 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (levelId === 6) { l6Jump(); return; }
     if (levelId === 7) {
       if (l7Phase === 'approach') { l7ApPressJump(); return; }
-      if (l7Phase === 'falldown') { if (x < W / 2) l7FdHoldL = true; else l7FdHoldR = true; return; }
+      // Register hold during 'curl' too — so if finger is held through the
+      // transition, steering is active the moment falldown starts.
+      if (l7Phase === 'curl' || l7Phase === 'falldown') {
+        if (x < W / 2) l7FdHoldL = true; else l7FdHoldR = true;
+      }
       return;
     }
     pressJump();
@@ -3636,7 +3643,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
       else            fallHoldR = Math.max(0, fallHoldR - 1);
     } else if (levelId === 7) {
       if (l7Phase === 'approach') l7ApReleaseJump();
-      else if (l7Phase === 'falldown') { l7FdHoldL = false; l7FdHoldR = false; }
+      else if (l7Phase === 'curl' || l7Phase === 'falldown') { l7FdHoldL = false; l7FdHoldR = false; }
     } else {
       releaseJump();
     }
