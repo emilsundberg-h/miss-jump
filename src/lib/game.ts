@@ -2079,15 +2079,6 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     drawFern(holeLeft - 6,  gy + 18 + 6, -1);
     drawFern(holeRight + 4, gy + 18 + 6,  1);
 
-    // Bouncing arrow hint (only while not yet in hole)
-    if (l7ApY >= 0) {
-      const arrowT = performance.now() / 1000;
-      const arrowY = gy - 28 - Math.abs(Math.sin(arrowT * 2.4)) * 9;
-      ctx.fillStyle = 'rgba(255,210,80,0.65)';
-      ctx.beginPath();
-      ctx.moveTo(holeCenter, arrowY + 16); ctx.lineTo(holeCenter - 11, arrowY); ctx.lineTo(holeCenter + 11, arrowY);
-      ctx.closePath(); ctx.fill();
-    }
 
     drawVignette();
   }
