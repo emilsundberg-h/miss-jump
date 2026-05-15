@@ -94,27 +94,26 @@ export default function Game() {
   const [muted,    setMuted]    = useState(false);
   const [easy,     setEasy]     = useState(false);
   const [tiltOk,   setTiltOk]   = useState(() => { try { return localStorage.getItem('mj_tilt') === 'granted'; } catch { return false; } });
-  const [useTilt,  setUseTilt]  = useState(false);
 
-  // Device orientation → tilt (level 7, all orientations)
+  // Device orientation → tilt (level 7). Active whenever tiltOk is true.
   useEffect(() => {
-    if (!tiltOk || !useTilt) return;
+    if (!tiltOk) return;
     const handler = (e: DeviceOrientationEvent) => {
       // gamma = rotation around device Y-axis.
-      // In portrait: gamma ≈ 0 at rest — works directly.
-      // In landscape: gamma ≈ ±90° constant offset. Subtract screen orientation
-      // angle to re-centre around 0 regardless of how the phone is rotated.
+      // Portrait: gamma ≈ 0 at rest.
+      // Landscape: gamma ≈ ±90° constant — subtract screen orientation angle
+      // to re-centre around 0 regardless of how the phone is held.
       const raw = (typeof screen?.orientation?.angle !== 'undefined'
         ? screen.orientation.angle
         : (window as any).orientation ?? 0) as number;
-      const ori   = raw > 180 ? raw - 360 : raw; // 270 → -90
+      const ori   = raw > 180 ? raw - 360 : raw; // normalise 270 → -90
       const gamma = e.gamma ?? 0;
       const tilt  = Math.abs(ori) === 180 ? -gamma : gamma - ori;
       controlRef.current?.setTilt(tilt);
     };
     window.addEventListener('deviceorientation', handler);
     return () => window.removeEventListener('deviceorientation', handler);
-  }, [tiltOk, useTilt]);
+  }, [tiltOk]);
 
   const requestTilt = useCallback(async () => {
     if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
@@ -250,7 +249,7 @@ export default function Game() {
 
       {tapHint && (
         <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", color: "rgba(255,255,255,0.7)", fontSize: 12, letterSpacing: "0.2em", textTransform: "uppercase", background: "rgba(20,14,26,0.4)", padding: "8px 16px", borderRadius: 99, backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", pointerEvents: "none", zIndex: 3 }}>
-          {levelId === 7 ? (useTilt ? "Luta vänster / höger för att styra" : "Tryck vänster · höger halva för att styra") : "Tap or press space to jump · hold for higher jump"}
+          {levelId === 7 ? (tiltOk ? "Luta vänster / höger för att styra" : "Tryck vänster · höger halva för att styra") : "Tap or press space to jump · hold for higher jump"}
         </div>
       )}
 
@@ -374,9 +373,18 @@ export default function Game() {
             ? "Roller-skate the fairground. Tap to jump. Dodge cotton candy, ice cream and popcorn. It gets faster and faster!"
             : "Walk Miss Li into the glowing hole in the forest floor. She'll roll into a ball — then steer left and right to fall through the gaps before the platforms push you off the top!"
           }</Subtitle>
-          {levelId === 7 && (
+          {levelId === 7 && !tiltOk && (
             <div onClick={e => e.stopPropagation()} style={{ marginBottom: 14 }}>
-              <TiltToggle useTilt={useTilt} onToggle={v => { if (v && !tiltOk) requestTilt().then(() => setUseTilt(true)); else setUseTilt(v); }} />
+              <button onClick={() => requestTilt()} style={{
+                background: "rgba(31,14,38,0.10)", border: "1.5px solid rgba(31,14,38,0.25)",
+                borderRadius: 99, padding: "8px 20px", cursor: "pointer",
+                fontSize: 13, fontWeight: 700, color: "#5030a0", letterSpacing: "0.04em",
+              }}>📱 Aktivera tiltstyrning</button>
+            </div>
+          )}
+          {levelId === 7 && tiltOk && (
+            <div style={{ marginBottom: 12, fontSize: 12, color: "rgba(31,14,38,0.5)", letterSpacing: "0.06em" }}>
+              Tilt aktivt · luta telefonen för att styra
             </div>
           )}
           <Cta onClick={pressJump}>Start the Show <Key>SPACE</Key></Cta>
@@ -396,11 +404,6 @@ export default function Game() {
           <div style={{ margin: "4px 0 18px" }}>
             <Stat label="Attempts" value={String(tries)} />
           </div>
-          {levelId === 7 && (
-            <div onClick={e => e.stopPropagation()} style={{ marginBottom: 14 }}>
-              <TiltToggle useTilt={useTilt} onToggle={v => { if (v && !tiltOk) requestTilt().then(() => setUseTilt(true)); else setUseTilt(v); }} />
-            </div>
-          )}
           <Cta onClick={pressJump}>Try Again <Key>SPACE</Key></Cta>
           <div onClick={e => e.stopPropagation()} style={{ marginTop: 10 }}>
             <DebugCopyRow

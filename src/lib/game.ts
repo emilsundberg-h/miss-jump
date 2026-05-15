@@ -2255,6 +2255,20 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     // Ball
     drawL7Ball(l7FdBallX, l7FdBallY, (l7FdSpinX / 55) % TAU, l7FdBallVY);
 
+    // Tilt meter — horizontal bar at bottom so user can verify tilt is working
+    if (l7FdTilt !== 0 || true) {  // always draw so player sees it
+      const mW = W * 0.28, mH = 6, mX = W / 2 - mW / 2, mY = H - 20;
+      ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fillRect(mX, mY, mW, mH);
+      const fill = l7FdTilt * mW / 2;
+      ctx.fillStyle = l7FdTilt < 0 ? '#60c0ff' : '#60c0ff';
+      if (fill < 0) ctx.fillRect(mX + mW/2 + fill, mY, -fill, mH);
+      else          ctx.fillRect(mX + mW/2,         mY,  fill, mH);
+      ctx.strokeStyle = 'rgba(255,255,255,0.20)'; ctx.lineWidth = 1;
+      ctx.strokeRect(mX, mY, mW, mH);
+      // Centre tick
+      ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(mX + mW/2 - 1, mY - 1, 2, mH + 2);
+    }
+
     // Danger flash at top when riding near top edge
     if (l7FdRidingPlat && l7FdRidingPlat.sy < H * 0.18) {
       const dA = Math.min(0.35, (H * 0.18 - l7FdRidingPlat.sy) / (H * 0.18) * 0.35);
