@@ -13,7 +13,7 @@ type LevelId = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 // Volume targets per game state
 const VOL = { menu: 0.07 as number, play: 0.7 as number, dead: 0.07 as number };
 
-function useMusic() {
+function useMusic(initialMuted: boolean) {
   const audio  = useRef<HTMLAudioElement | null>(null);
   const target = useRef(VOL.menu);
   const timer  = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -33,13 +33,11 @@ function useMusic() {
     }, 100);
   }, []);
 
-  const muted = useRef(false);
+  const mutedRef = useRef(initialMuted);
 
-  const toggleMute = useCallback(() => {
-    muted.current = !muted.current;
-    const a = audio.current;
-    if (a) a.muted = muted.current;
-    return muted.current;
+  const setMuted = useCallback((val: boolean) => {
+    mutedRef.current = val;
+    if (audio.current) audio.current.muted = val;
   }, []);
 
   const start = useCallback(() => {
@@ -47,7 +45,7 @@ function useMusic() {
     const a = new Audio("/bg-music.mp3");
     a.loop = true;
     a.volume = 0;
-    a.muted = muted.current;
+    a.muted = mutedRef.current;
     a.play().catch(() => {});
     audio.current = a;
     setVol(VOL.menu);
@@ -67,22 +65,37 @@ function useMusic() {
       audio.current?.pause();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  return { start, setVol, toggleMute };
+  return { start, setVol, setMuted };
 }
 
 export default function Game() {
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const controlRef = useRef<ReturnType<typeof createGame> | null>(null);
-  const music      = useMusic();
+
+  const [muted, setMutedState] = useState<boolean>(() => {
+    try { return localStorage.getItem('mj_muted') === 'true'; } catch { return false; }
+  });
+  const music = useMusic(muted);
+
+  const handleMuteToggle = useCallback(() => {
+    setMutedState(prev => {
+      const next = !prev;
+      music.setMuted(next);
+      try { localStorage.setItem('mj_muted', String(next)); } catch {}
+      return next;
+    });
+  }, [music]);
 
   const [levelId,  setLevelId]  = useState<LevelId | null>(null);
   const [custom,   setCustom]   = useState<CharCustom>(() => {
     try { const s = localStorage.getItem('mj_custom'); if (s) return { ...DEFAULT_CUSTOM, ...JSON.parse(s) }; } catch {}
     return DEFAULT_CUSTOM;
   });
-  const [bests,    setBests]    = useState<Record<number, number>>(() => {
-    try { const s = localStorage.getItem('mj_bests'); if (s) return JSON.parse(s); } catch {}
-    return {};
+  const [bests, setBests] = useState<Record<number, { easy?: number; normal?: number }>>(() => {
+    // TEMP: fake all cleared for preview
+    return { 1:{normal:1}, 2:{normal:3}, 3:{easy:2,normal:5}, 4:{normal:2}, 5:{easy:1}, 6:{normal:4}, 7:{easy:2,normal:3} };
+    // try { const s = localStorage.getItem('mj_bests'); if (s) return JSON.parse(s); } catch {}
+    // return {};
   });
   const [state,    setState]    = useState<GameStateKind>("start");
   const [score,    setScore]    = useState(0);
@@ -91,7 +104,6 @@ export default function Game() {
   const [tries,    setTries]    = useState(1);
   const [tapHint,  setTapHint]  = useState(false);
   const [copied,   setCopied]   = useState(false);
-  const [muted,    setMuted]    = useState(false);
   const [easy,     setEasy]     = useState(false);
 
   // Persist character customisation
@@ -125,8 +137,10 @@ export default function Game() {
           const t = data.tries ?? 1;
           setWinData({ score: data.score ?? 0, tries: t });
           setBests(prev => {
-            if (!prev[levelId!] || t < prev[levelId!]) {
-              const next = { ...prev, [levelId!]: t };
+            const entry = prev[levelId!] ?? {};
+            const key = easy ? "easy" : "normal";
+            if (entry[key] === undefined || t < entry[key]!) {
+              const next = { ...prev, [levelId!]: { ...entry, [key]: t } };
               try { localStorage.setItem('mj_bests', JSON.stringify(next)); } catch {}
               return next;
             }
@@ -191,23 +205,6 @@ export default function Game() {
           visibility: levelId ? "visible" : "hidden" }}
       />
 
-      {/* ── Mute button — always visible ── */}
-      <button
-        onClick={() => setMuted(music.toggleMute())}
-        style={{
-          position: "fixed", top: 14, right: 14, zIndex: 20,
-          width: 36, height: 36, borderRadius: "50%",
-          background: "rgba(20,14,26,0.55)", backdropFilter: "blur(8px)",
-          border: "1px solid rgba(255,255,255,0.15)",
-          color: "#f7efe2", fontSize: 16, cursor: "pointer",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-        }}
-        title={muted ? "Unmute" : "Mute"}
-      >
-        {muted ? "🔇" : "🔊"}
-      </button>
-
       {isPlaying && levelId && (
         <div style={{ position: "fixed", top: 18, left: 18, right: 62, display: "flex", justifyContent: "space-between", alignItems: "flex-start", pointerEvents: "none", zIndex: 5 }}>
           <HudCard label="Spotlight" value={String(score)} />
@@ -232,16 +229,26 @@ export default function Game() {
           <div style={{ textAlign: "center", marginBottom: 20 }}>
             <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.28em", textTransform: "uppercase", color: "#b14a78", marginBottom: 8 }}>Choose Level</div>
             <h1 style={{ fontFamily: '"Playfair Display", serif', fontWeight: 900, fontStyle: "italic", fontSize: "clamp(36px,6vw,64px)", lineHeight: 0.92, margin: "0 0 16px", color: "#f7efe2" }}>Miss Jump</h1>
-            {/* Difficulty toggle */}
-            <div style={{ display: "inline-flex", background: "rgba(0,0,0,0.30)", borderRadius: 99, padding: 4, gap: 4 }}>
-              <button onClick={() => setEasy(false)} style={{
-                padding: "8px 22px", borderRadius: 99, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em",
-                background: !easy ? "#f7efe2" : "transparent", color: !easy ? "#1f0e26" : "rgba(255,255,255,0.55)", transition: "all 0.18s",
-              }}>Normal</button>
-              <button onClick={() => setEasy(true)} style={{
-                padding: "8px 22px", borderRadius: 99, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em",
-                background: easy ? "#a6e84a" : "transparent", color: easy ? "#1f0e26" : "rgba(255,255,255,0.55)", transition: "all 0.18s",
-              }}>Easy ⭐</button>
+            {/* Difficulty + Sound toggles */}
+            <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+              <div style={{ display: "inline-flex", background: "rgba(0,0,0,0.30)", borderRadius: 99, padding: 4, gap: 4 }}>
+                <button onClick={() => setEasy(true)} style={{
+                  padding: "8px 22px", borderRadius: 99, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em",
+                  background: easy ? "#a6e84a" : "transparent", color: easy ? "#1f0e26" : "rgba(255,255,255,0.55)", transition: "all 0.18s",
+                }}>Easy ⭐</button>
+                <button onClick={() => setEasy(false)} style={{
+                  padding: "8px 22px", borderRadius: 99, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em",
+                  background: !easy ? "#f7efe2" : "transparent", color: !easy ? "#1f0e26" : "rgba(255,255,255,0.55)", transition: "all 0.18s",
+                }}>Normal</button>
+              </div>
+              <button onClick={handleMuteToggle} style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "8px 18px", borderRadius: 99, border: "none", cursor: "pointer", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em",
+                background: "rgba(0,0,0,0.30)", color: muted ? "rgba(255,255,255,0.40)" : "rgba(255,255,255,0.85)", transition: "all 0.18s",
+              }}>
+                <span style={{ fontSize: 16 }}>{muted ? "🔇" : "🔊"}</span>
+                {muted ? "Ljud av" : "Ljud på"}
+              </button>
             </div>
             {easy && <div style={{ marginTop: 8, fontSize: 11, color: "rgba(166,232,74,0.85)", letterSpacing: "0.08em" }}>No spikes · Wider gaps · Slower speed</div>}
           </div>
@@ -296,7 +303,7 @@ export default function Game() {
           </div>
 
           {/* Level cards — 2×3 grid */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, maxWidth: 560 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
             <LevelCard num={1} title="Forest Tour" description="Run on mossy platforms, jump over spikes and gaps." difficulty={2} mechanic="🏃 Jump"
               palette={{ bg: "linear-gradient(150deg,#1e2e14,#101e0e)", accent: "#85b84a", dot: "#a0c862", badge: "#3a6020" }}
               best={bests[1]} onClick={() => setLevelId(1)} />
@@ -313,7 +320,7 @@ export default function Game() {
               palette={{ bg: "linear-gradient(150deg,#2a1810,#160c06)", accent: "#ffd86b", dot: "#ff9ec0", badge: "#8a3a10" }}
               best={bests[5]} onClick={() => setLevelId(5)} />
             <LevelCard num={6} title="Fairground" description="Roller-skate the amusement park. Jump over cotton candy, ice cream and popcorn — faster and faster!" difficulty={3} mechanic="⛸️ Jump"
-              palette={{ bg: "linear-gradient(150deg,#1a2a4a,#0e1830)", accent: "#ffd470", dot: "#ff9ec0", badge: "#4a6a20" }}
+              palette={{ bg: "linear-gradient(150deg,#1a2a4a,#0e1830)", accent: "#3ecfbf", dot: "#a8eae4", badge: "#0e5048" }}
               best={bests[6]} onClick={() => setLevelId(6)} />
             <LevelCard num={7} title="Night Fall" description="Miss Li rolls into a ball and falls through the forest floor. Guide her through platform gaps in the dark — faster and faster!" difficulty={4} mechanic="← → Steer"
               palette={{ bg: "linear-gradient(150deg,#040c1c,#06122a)", accent: "#6ab87a", dot: "#c8e0ff", badge: "#142840" }}
@@ -565,31 +572,55 @@ function Swatch({ color, label, active, onClick }: { color: string; label: strin
 function LevelCard({ num, title, description, difficulty, mechanic, palette, best, onClick }: {
   num: number; title: string; description: string; difficulty: number; mechanic: string;
   palette: { bg: string; accent: string; dot: string; badge: string };
-  best?: number; onClick: () => void;
+  best?: { easy?: number; normal?: number }; onClick: () => void;
 }) {
+  const cleared = best !== undefined && (best.easy !== undefined || best.normal !== undefined);
+  // Show Normal if cleared on Normal, otherwise Easy. If both, Normal wins.
+  const shownDiff = best?.normal !== undefined ? "Normal" : "Easy";
+  const shownTries = best?.normal ?? best?.easy;
+
   return (
     <button onClick={onClick} style={{
-      background: palette.bg, border: `1.5px solid ${palette.accent}55`,
+      background: palette.bg,
+      border: cleared ? `1.5px solid ${palette.accent}` : `1.5px solid ${palette.accent}55`,
       borderRadius: 16, padding: "18px 16px 16px", cursor: "pointer",
-      textAlign: "left", color: "#f5efe6",
-      boxShadow: "0 10px 32px rgba(0,0,0,0.45)", outline: "none",
+      textAlign: "left", color: "#f5efe6", position: "relative", overflow: "hidden",
+      boxShadow: cleared
+        ? `0 10px 32px rgba(0,0,0,0.45), 0 0 18px ${palette.accent}30`
+        : "0 10px 32px rgba(0,0,0,0.45)",
+      outline: "none",
     }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+      {cleared && (
+        <>
+          {/* Diagonal dark overlay on the right half */}
+          <div style={{
+            position: "absolute", inset: 0, pointerEvents: "none",
+            background: "rgba(0,0,0,0.52)",
+            clipPath: "polygon(52% 0, 100% 0, 100% 100%, 28% 100%)",
+          }} />
+          {/* Completion info centred in the toned area */}
+          <div style={{
+            position: "absolute", top: "50%", right: "6%",
+            transform: "translateY(-50%)",
+            width: "38%", textAlign: "center", pointerEvents: "none",
+          }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: palette.accent, textTransform: "uppercase", letterSpacing: "0.14em" }}>Cleared</div>
+            <div style={{ fontSize: 10, color: palette.accent, fontWeight: 600, marginTop: 4, opacity: 0.8 }}>{shownDiff}</div>
+            <div style={{ fontSize: 10, color: palette.accent, fontWeight: 600, marginTop: 1, opacity: 0.65 }}>
+              Best: {shownTries} {shownTries === 1 ? "try" : "tries"}
+            </div>
+          </div>
+        </>
+      )}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8, position: "relative", zIndex: 1 }}>
         <span style={{ background: palette.badge, color: "#fff", fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", padding: "2px 8px", borderRadius: 99 }}>Level {num}</span>
         <span style={{ fontSize: 11, letterSpacing: 1.5 }}>
-          {[0,1,2,3].map(i => <span key={i} style={{ color: i < difficulty ? palette.dot : "rgba(255,255,255,0.18)" }}>★</span>)}
+          {[0,1,2,3].map(i => <span key={i} style={{ color: cleared ? palette.accent : (i < difficulty ? palette.dot : "rgba(255,255,255,0.18)") }}>★</span>)}
         </span>
       </div>
-      <div style={{ fontFamily: '"Playfair Display", serif', fontWeight: 700, fontStyle: "italic", fontSize: 19, lineHeight: 1.1, marginBottom: 6, color: "#fff" }}>{title}</div>
-      <div style={{ fontSize: 11, lineHeight: 1.55, color: "rgba(245,239,230,0.65)", marginBottom: 10 }}>{description}</div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{ fontSize: 11, color: palette.accent, fontWeight: 700 }}>{mechanic} &nbsp;→</div>
-        {best !== undefined && (
-          <div style={{ fontSize: 9, color: palette.dot, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", opacity: 0.85 }}>
-            Best: {best} {best === 1 ? "try" : "tries"}
-          </div>
-        )}
-      </div>
+      <div style={{ fontFamily: '"Playfair Display", serif', fontWeight: 700, fontStyle: "italic", fontSize: 19, lineHeight: 1.1, marginBottom: 6, color: "#fff", maxWidth: cleared ? "56%" : undefined }}>{title}</div>
+      <div style={{ fontSize: 11, lineHeight: 1.55, color: "rgba(245,239,230,0.65)", marginBottom: 10, maxWidth: cleared ? "56%" : undefined }}>{description}</div>
+      <div style={{ fontSize: 11, color: palette.accent, fontWeight: 700 }}>{mechanic} &nbsp;→</div>
     </button>
   );
 }

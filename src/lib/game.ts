@@ -2884,6 +2884,9 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   let fall4Phase: 'run' | 'fall' = 'run';
   let fallX = 0, fallWorldY = 0;
   let fallHoldL = 0, fallHoldR = 0;
+  let fall4LightningNext = 1.5;   // seconds until next bolt
+  let fall4LightningFlash = 0;    // current flash brightness 0..1
+  let fall4LightningPts: [number, number][] = []; // bolt path
 
   function startFall4() {
     // Phase 1: platform runner (same init as levels 1&2)
@@ -2903,6 +2906,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     fall4Phase = 'fall';
     fallX = Math.max(60, Math.min(W - 60, player.x - camX));
     fallWorldY = 0; fallHoldL = 0; fallHoldR = 0;
+    fall4LightningNext = 0.8; fall4LightningFlash = 0; fall4LightningPts = [];
     // Burst of particles to signal transition
     for (let i = 0; i < 18; i++) particles.push({
       x: player.x - camX, y: screenY(player.y, true) + 20,
@@ -2913,6 +2917,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
 
   function startFalling() {  // kept for direct call from startFall4 retry
     fallX = W * 0.5; fallWorldY = 0; fallHoldL = 0; fallHoldR = 0;
+    fall4LightningNext = 0.8; fall4LightningFlash = 0; fall4LightningPts = [];
     gstate = 'play'; score = 0;
     cb.onStateChange('play'); cb.onScore(0); cb.onProgress(0);
   }
@@ -2946,6 +2951,21 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     cb.onScore(score);
     cb.onProgress(Math.min(1, fallWorldY / FALL_WIN_Y));
     if (fallWorldY >= FALL_WIN_Y) winGame();
+
+    // Lightning timing
+    fall4LightningNext -= dt;
+    if (fall4LightningNext <= 0) {
+      fall4LightningFlash = 1.0;
+      const bx = (0.12 + Math.random() * 0.76) * W;
+      fall4LightningPts = [[bx, -10]];
+      let cx = bx;
+      for (let i = 1; i <= 10; i++) {
+        cx = Math.max(15, Math.min(W - 15, cx + (Math.random() - 0.5) * 72));
+        fall4LightningPts.push([cx, i * (H + 20) / 10]);
+      }
+      fall4LightningNext = 1.2 + Math.random() * 2.8;
+    }
+    fall4LightningFlash = Math.max(0, fall4LightningFlash - dt * 3.2);
   }
 
   function drawFall4Runner() {
@@ -3002,20 +3022,47 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   function drawFalling() {
     const camY = Math.max(0, fallWorldY - H * 0.35);
 
-    // Sky gradient (deepens as player falls)
-    const depth = Math.min(1, fallWorldY / 6000);
+    // Storm sky — dark from the start
     const sg = ctx.createLinearGradient(0, 0, 0, H);
-    sg.addColorStop(0, `hsl(${230 - depth*40},${70-depth*20}%,${40-depth*15}%)`);
-    sg.addColorStop(0.6, CLOUD_PAL.skyTop);
-    sg.addColorStop(1, CLOUD_PAL.skyBot);
+    sg.addColorStop(0, '#040608');
+    sg.addColorStop(0.45, '#0c1220');
+    sg.addColorStop(1, '#151e38');
     ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H);
 
-    // Parallax background puffs
+    // Lightning flash background glow
+    if (fall4LightningFlash > 0) {
+      ctx.fillStyle = `rgba(140,180,255,${fall4LightningFlash * 0.28})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // Parallax background storm puffs (dark)
     for (const o of FALL_OBS_DEFS) {
       const osy = o.wy * 0.25 - camY * 0.25;
       if (osy < -80 || osy > H + 80) continue;
-      ctx.fillStyle = 'rgba(255,200,225,0.14)';
-      ctx.beginPath(); ctx.ellipse(o.gapFrac * W * 0.8 + W * 0.1, osy, 110, 36, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(30,42,80,0.55)';
+      ctx.beginPath(); ctx.ellipse(o.gapFrac * W * 0.8 + W * 0.1, osy, 120, 42, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(50,65,110,0.30)';
+      ctx.beginPath(); ctx.ellipse(o.gapFrac * W * 0.8 + W * 0.1 - 40, osy - 18, 80, 30, 0, 0, TAU); ctx.fill();
+    }
+
+    // Lightning bolt
+    if (fall4LightningFlash > 0 && fall4LightningPts.length > 1) {
+      ctx.save();
+      ctx.shadowColor = '#a0c8ff';
+      ctx.shadowBlur = 18;
+      ctx.strokeStyle = `rgba(230,245,255,${fall4LightningFlash})`;
+      ctx.lineWidth = 1.5 + fall4LightningFlash * 2.5;
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(fall4LightningPts[0][0], fall4LightningPts[0][1]);
+      for (const [px, py] of fall4LightningPts.slice(1)) ctx.lineTo(px, py);
+      ctx.stroke();
+      // Thin bright core
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = `rgba(255,255,255,${fall4LightningFlash * 0.8})`;
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+      ctx.restore();
     }
 
     // Obstacles — approaching from below (higher world Y = first visible at bottom of screen)
@@ -3090,31 +3137,59 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   }
 
   function drawFallingObstacle(sy: number, gapX: number, gapW: number) {
-    const C1 = CLOUD_PAL.platformMid, C2 = CLOUD_PAL.platformSurf;
+    const STORM_BASE  = '#2e3a58';
+    const STORM_PUFF  = '#3d4e78';
+    const STORM_LIGHT = '#526090';
+    const rx = gapX + gapW;
     // Left block
     if (gapX > 0) {
-      ctx.fillStyle = C1; ctx.fillRect(0, sy, gapX, FALL_OBS_H);
-      ctx.fillStyle = C2;
+      ctx.fillStyle = STORM_BASE; ctx.fillRect(0, sy, gapX, FALL_OBS_H);
+      ctx.fillStyle = STORM_PUFF;
       const n = Math.ceil(gapX / 28);
       for (let i = 0; i < n; i++) {
         const r = 16 + (i % 3) * 5;
         ctx.beginPath(); ctx.arc((i + 0.5) * gapX / n, sy, r, 0, TAU); ctx.fill();
       }
+      // Lighter puff tops
+      ctx.fillStyle = STORM_LIGHT;
+      for (let i = 0; i < n; i++) {
+        const r = (10 + (i % 3) * 3) * 0.65;
+        ctx.beginPath(); ctx.arc((i + 0.5) * gapX / n - 3, sy - 6, r, 0, TAU); ctx.fill();
+      }
     }
     // Right block
-    const rx = gapX + gapW;
     if (rx < W) {
-      ctx.fillStyle = C1; ctx.fillRect(rx, sy, W - rx, FALL_OBS_H);
-      ctx.fillStyle = C2;
+      ctx.fillStyle = STORM_BASE; ctx.fillRect(rx, sy, W - rx, FALL_OBS_H);
+      ctx.fillStyle = STORM_PUFF;
       const n = Math.ceil((W - rx) / 28);
       for (let i = 0; i < n; i++) {
         const r = 16 + (i % 3) * 5;
         ctx.beginPath(); ctx.arc(rx + (i + 0.5) * (W - rx) / n, sy, r, 0, TAU); ctx.fill();
       }
+      ctx.fillStyle = STORM_LIGHT;
+      for (let i = 0; i < n; i++) {
+        const r = (10 + (i % 3) * 3) * 0.65;
+        ctx.beginPath(); ctx.arc(rx + (i + 0.5) * (W - rx) / n - 3, sy - 6, r, 0, TAU); ctx.fill();
+      }
     }
-    // White highlights
-    ctx.fillStyle = 'rgba(255,255,255,0.75)';
-    ctx.fillRect(0, sy, gapX, 3); ctx.fillRect(rx, sy, W-rx, 3);
+    // Dark rain-shadow underside
+    ctx.fillStyle = 'rgba(10,15,30,0.55)';
+    ctx.fillRect(0, sy + FALL_OBS_H - 8, gapX, 8);
+    ctx.fillRect(rx, sy + FALL_OBS_H - 8, W - rx, 8);
+    // Faint blue-white edge highlight (instead of pure white)
+    ctx.fillStyle = 'rgba(160,190,255,0.35)';
+    ctx.fillRect(0, sy, gapX, 2); ctx.fillRect(rx, sy, W-rx, 2);
+    // Lightning glow at gap edges
+    if (fall4LightningFlash > 0) {
+      const glow = ctx.createLinearGradient(gapX - 20, 0, gapX, 0);
+      glow.addColorStop(0, 'rgba(180,220,255,0)');
+      glow.addColorStop(1, `rgba(200,230,255,${fall4LightningFlash * 0.4})`);
+      ctx.fillStyle = glow; ctx.fillRect(gapX - 20, sy, 20, FALL_OBS_H);
+      const glow2 = ctx.createLinearGradient(rx, 0, rx + 20, 0);
+      glow2.addColorStop(0, `rgba(200,230,255,${fall4LightningFlash * 0.4})`);
+      glow2.addColorStop(1, 'rgba(180,220,255,0)');
+      ctx.fillStyle = glow2; ctx.fillRect(rx, sy, 20, FALL_OBS_H);
+    }
   }
 
   // ── Drawing ──
