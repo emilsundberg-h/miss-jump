@@ -1722,7 +1722,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
 
     // ── Head (drawn AFTER back hair, BEFORE fringe) ──
     ctx.fillStyle = custom.skin ?? '#f7d8be';
-    ctx.beginPath(); ctx.arc(0, hY, 10, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, hY, 11, 0, TAU); ctx.fill();
 
     // ── Fringe / bangs — drawn ON TOP of head, only covers forehead area ──
     ctx.fillStyle = hairM;
@@ -1733,14 +1733,24 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     ctx.bezierCurveTo(2, hY - 6, -2, hY - 6, -5, hY - 9);
     ctx.closePath(); ctx.fill();
 
-    // ── Eyes + mouth ──
-    ctx.fillStyle = '#2a1a20';
+    // ── Face — matching renderMissLi ──
+    // Blush
+    ctx.fillStyle = 'rgba(220,100,120,0.4)';
+    ctx.beginPath(); ctx.arc(-6, hY+3, 2.5, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc( 6, hY+3, 2.5, 0, TAU); ctx.fill();
+    // Eyes (rectangles + eyelash + highlights)
+    ctx.fillStyle = '#1a1320';
+    ctx.fillRect(-5, hY-2, 3, 2.5); ctx.fillRect(2, hY-2, 3, 2.5);
+    ctx.strokeStyle = '#1a1320'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(5, hY-2); ctx.lineTo(7.5, hY-4); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath(); ctx.arc(-4, hY-1, 0.9, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc( 3, hY-1, 0.9, 0, TAU); ctx.fill();
+    // Lips
+    ctx.fillStyle = '#c0394a';
     ctx.beginPath();
-    ctx.ellipse(-3, hY, 2, 1.5, 0, 0, TAU);
-    ctx.ellipse(3,  hY, 2, 1.5, 0, 0, TAU);
-    ctx.fill();
-    ctx.strokeStyle = '#c08060'; ctx.lineWidth = 1; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(-2, hY + 5); ctx.lineTo(2, hY + 5); ctx.stroke();
+    ctx.moveTo(-3, hY+4); ctx.quadraticCurveTo(0, hY+7, 3, hY+4);
+    ctx.quadraticCurveTo(0, hY+5, -3, hY+4); ctx.closePath(); ctx.fill();
 
     ctx.restore();
   }
