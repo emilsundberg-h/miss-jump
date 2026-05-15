@@ -94,8 +94,8 @@ const L7_HOLE_XF      = 0.52;  // hole left edge fraction of W
 const L7_HOLE_WF      = 0.16;  // hole width fraction of W
 const L7_CURL_DUR     = 1.2;   // transition animation duration (s)
 const L7_FD_GRAVITY   = 1500;  // falldown ball gravity (px/s²)
-const L7_FD_BASE_SPD  = 85;    // initial platform scroll speed (px/s upward)
-const L7_FD_MAX_SPD   = 310;   // max platform scroll speed
+const L7_FD_BASE_SPD  = 300;   // initial platform scroll speed (px/s upward)
+const L7_FD_MAX_SPD   = 680;   // max platform scroll speed
 const L7_FD_H_SPEED   = 620;   // max horizontal ball speed
 const L7_FD_H_ACCEL   = 2200;  // horizontal acceleration
 const L7_FD_PLAT_H    = 24;    // platform physics/visual thickness
@@ -1904,7 +1904,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
 
   function updateL7Falldown(dt: number) {
     l7FdTime += dt;
-    l7FdSpeed = Math.min(L7_FD_MAX_SPD, L7_FD_BASE_SPD + l7FdTime * 10);
+    l7FdSpeed = Math.min(L7_FD_MAX_SPD, L7_FD_BASE_SPD + l7FdTime * 16);
 
     // ── Horizontal ──────────────────────────────────────────────────────────
     const hAcc = L7_FD_H_ACCEL * dt;
@@ -2276,8 +2276,8 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     drawL7Ball(l7FdBallX, l7FdBallY, (l7FdSpinX / 55) % TAU, l7FdBallVY);
 
     // Danger flash at top when riding near top edge
-    if (l7FdRidingPlat && l7FdRidingPlat.sy < H * 0.18) {
-      const dA = Math.min(0.35, (H * 0.18 - l7FdRidingPlat.sy) / (H * 0.18) * 0.35);
+    if (l7FdRidingPlat && l7FdRidingPlat.sy < H * 0.30) {
+      const dA = Math.min(0.40, (H * 0.30 - l7FdRidingPlat.sy) / (H * 0.30) * 0.40);
       ctx.fillStyle = `rgba(255,60,40,${dA})`;
       ctx.fillRect(0, 0, W, H * 0.08);
     }
