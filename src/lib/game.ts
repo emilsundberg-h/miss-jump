@@ -102,7 +102,7 @@ const L7_FD_PLAT_H    = 24;    // platform physics/visual thickness
 const L7_FD_WIN_PLATS = 18;    // platforms to pass to win
 const L7_FD_GAP_WF    = 0.10;  // gap width fraction (normal)
 const L7_FD_GAP_WF_EZ = 0.14;  // gap width fraction (easy)
-const L7_FD_SPACING_F = 0.26;  // vertical spacing between platforms as fraction of H
+const L7_FD_SPACING_F = 0.42;  // vertical spacing between platforms as fraction of H
 
 const TAU = Math.PI * 2;
 
@@ -1933,14 +1933,15 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
         // Platform top hasn't moved yet — p.sy is still the pre-scroll value
         if (prevBot <= p.sy && currBot >= p.sy) {
           const inGap = l7FdBallX >= p.gapX && l7FdBallX <= p.gapX + p.gapW;
-          if (!inGap) {
-            // Land on platform
+          if (!inGap && !p.passed) {
+            // Land on unscored solid platform
             l7FdBallY = p.sy - L7_BALL_R;
             l7FdBallVY = 0;
             l7FdRidingPlat = p;
             break;
-          } else {
+          } else if (inGap) {
             l7FdScorePlat(p);
+            break; // one platform per frame
           }
         }
       }
@@ -2254,20 +2255,6 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
 
     // Ball
     drawL7Ball(l7FdBallX, l7FdBallY, (l7FdSpinX / 55) % TAU, l7FdBallVY);
-
-    // Tilt meter — horizontal bar at bottom so user can verify tilt is working
-    if (l7FdTilt !== 0 || true) {  // always draw so player sees it
-      const mW = W * 0.28, mH = 6, mX = W / 2 - mW / 2, mY = H - 20;
-      ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fillRect(mX, mY, mW, mH);
-      const fill = l7FdTilt * mW / 2;
-      ctx.fillStyle = l7FdTilt < 0 ? '#60c0ff' : '#60c0ff';
-      if (fill < 0) ctx.fillRect(mX + mW/2 + fill, mY, -fill, mH);
-      else          ctx.fillRect(mX + mW/2,         mY,  fill, mH);
-      ctx.strokeStyle = 'rgba(255,255,255,0.20)'; ctx.lineWidth = 1;
-      ctx.strokeRect(mX, mY, mW, mH);
-      // Centre tick
-      ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(mX + mW/2 - 1, mY - 1, 2, mH + 2);
-    }
 
     // Danger flash at top when riding near top edge
     if (l7FdRidingPlat && l7FdRidingPlat.sy < H * 0.18) {
@@ -3484,9 +3471,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (levelId === 5) { l5JDX = dx; l5JDY = dy; }
   }
 
-  function setTilt(gamma: number) {
-    if (levelId === 7 && l7Phase === 'falldown') l7FdTilt = Math.max(-1, Math.min(1, gamma / 30));
-  }
+  function setTilt(_gamma: number) { void _gamma; }
 
   function destroy() {
     cancelAnimationFrame(rafId);

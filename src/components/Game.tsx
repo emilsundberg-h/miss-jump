@@ -93,41 +93,6 @@ export default function Game() {
   const [copied,   setCopied]   = useState(false);
   const [muted,    setMuted]    = useState(false);
   const [easy,     setEasy]     = useState(false);
-  // tiltActive is false on every page load — iOS requires fresh requestPermission each session
-  const [tiltActive, setTiltActive] = useState(false);
-
-  // Device orientation → tilt (level 7). Active only after explicit activation this session.
-  useEffect(() => {
-    if (!tiltActive) return;
-    const handler = (e: DeviceOrientationEvent) => {
-      // gamma = rotation around device Y-axis.
-      // Portrait: gamma ≈ 0 at rest.
-      // Landscape: gamma ≈ ±90° constant offset — subtract screen orientation
-      // angle to re-centre around 0 in all orientations.
-      const raw = (typeof screen?.orientation?.angle !== 'undefined'
-        ? screen.orientation.angle
-        : (window as any).orientation ?? 0) as number;
-      const ori   = raw > 180 ? raw - 360 : raw; // 270 → -90
-      const gamma = e.gamma ?? 0;
-      const tilt  = Math.abs(ori) === 180 ? -gamma : gamma - ori;
-      controlRef.current?.setTilt(tilt);
-    };
-    window.addEventListener('deviceorientation', handler);
-    return () => window.removeEventListener('deviceorientation', handler);
-  }, [tiltActive]);
-
-  // Must be called from a direct user-gesture; iOS ignores stale localStorage grants
-  const requestTilt = useCallback(async () => {
-    if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
-      try {
-        const res = await (DeviceOrientationEvent as any).requestPermission();
-        if (res === 'granted') setTiltActive(true);
-      } catch {}
-    } else {
-      // Android / desktop: no permission dialog needed
-      setTiltActive(true);
-    }
-  }, []);
 
   // Persist character customisation
   useEffect(() => {
@@ -252,7 +217,7 @@ export default function Game() {
 
       {tapHint && (
         <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", color: "rgba(255,255,255,0.7)", fontSize: 12, letterSpacing: "0.2em", textTransform: "uppercase", background: "rgba(20,14,26,0.4)", padding: "8px 16px", borderRadius: 99, backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", pointerEvents: "none", zIndex: 3 }}>
-          {levelId === 7 ? (tiltActive ? "Luta vänster / höger för att styra" : "Tryck vänster · höger halva för att styra") : "Tap or press space to jump · hold for higher jump"}
+          {levelId === 7 ? "Tryck vänster · höger halva för att styra" : "Tap or press space to jump · hold for higher jump"}
         </div>
       )}
 
@@ -376,20 +341,6 @@ export default function Game() {
             ? "Roller-skate the fairground. Tap to jump. Dodge cotton candy, ice cream and popcorn. It gets faster and faster!"
             : "Walk Miss Li into the glowing hole in the forest floor. She'll roll into a ball — then steer left and right to fall through the gaps before the platforms push you off the top!"
           }</Subtitle>
-          {levelId === 7 && !tiltActive && (
-            <div onClick={e => e.stopPropagation()} style={{ marginBottom: 14 }}>
-              <button onClick={() => requestTilt()} style={{
-                background: "rgba(31,14,38,0.10)", border: "1.5px solid rgba(31,14,38,0.25)",
-                borderRadius: 99, padding: "8px 20px", cursor: "pointer",
-                fontSize: 13, fontWeight: 700, color: "#5030a0", letterSpacing: "0.04em",
-              }}>📱 Aktivera tiltstyrning</button>
-            </div>
-          )}
-          {levelId === 7 && tiltActive && (
-            <div style={{ marginBottom: 12, fontSize: 12, color: "rgba(31,14,38,0.5)", letterSpacing: "0.06em" }}>
-              Tilt aktivt · luta telefonen för att styra
-            </div>
-          )}
           <Cta onClick={pressJump}>Start the Show <Key>SPACE</Key></Cta>
           <div onClick={e => e.stopPropagation()}>
             <BackLink onClick={() => setLevelId(null)}>← Change Level</BackLink>
@@ -730,27 +681,6 @@ function HudCard({ label, value, progress }: { label: string; value?: string; pr
   );
 }
 
-function TiltToggle({ useTilt, onToggle }: { useTilt: boolean; onToggle: (v: boolean) => void }) {
-  return (
-    <div style={{ textAlign: "center" }}>
-      <div style={{ fontSize: 11, color: "rgba(31,14,38,0.55)", marginBottom: 6, letterSpacing: "0.08em", textTransform: "uppercase" }}>Styrning</div>
-      <div style={{ display: "inline-flex", background: "rgba(0,0,0,0.10)", borderRadius: 99, padding: 3, gap: 3 }}>
-        <button onClick={() => onToggle(false)} style={{
-          padding: "7px 18px", borderRadius: 99, border: "none", cursor: "pointer",
-          fontWeight: 700, fontSize: 12, letterSpacing: "0.04em", transition: "all 0.15s",
-          background: !useTilt ? "#1f0e26" : "transparent",
-          color: !useTilt ? "#fff" : "rgba(31,14,38,0.50)",
-        }}>Tryck</button>
-        <button onClick={() => onToggle(true)} style={{
-          padding: "7px 18px", borderRadius: 99, border: "none", cursor: "pointer",
-          fontWeight: 700, fontSize: 12, letterSpacing: "0.04em", transition: "all 0.15s",
-          background: useTilt ? "#1f0e26" : "transparent",
-          color: useTilt ? "#fff" : "rgba(31,14,38,0.50)",
-        }}>📱 Tilt</button>
-      </div>
-    </div>
-  );
-}
 
 function DebugCopyRow({ levelId, tries, progress, score, copied, onCopy }: {
   levelId: number; tries: number; progress: number; score: number; copied: boolean; onCopy: () => void;
