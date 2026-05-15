@@ -1928,20 +1928,22 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
       l7FdBallY     += l7FdBallVY * dt;
 
       for (const p of l7FdPlats) {
-        const prevBot = prevBY  + L7_BALL_R; // ball bottom at START of frame
+        const prevBot = prevBY    + L7_BALL_R; // ball bottom at START of frame
         const currBot = l7FdBallY + L7_BALL_R; // ball bottom at END of frame
-        // Platform top hasn't moved yet — p.sy is still the pre-scroll value
-        if (prevBot <= p.sy && currBot >= p.sy) {
+        // CCD: platform also moves UP during this frame.
+        // Check if ball bottom crossed [platform_start … platform_end] window.
+        // platform_end = p.sy - l7FdSpeed*dt (where it will be after scroll).
+        const platEnd = p.sy - l7FdSpeed * dt;
+        if (prevBot <= p.sy && currBot >= platEnd) {
           const inGap = l7FdBallX >= p.gapX && l7FdBallX <= p.gapX + p.gapW;
           if (!inGap && !p.passed) {
-            // Land on unscored solid platform
-            l7FdBallY = p.sy - L7_BALL_R;
+            l7FdBallY = p.sy - L7_BALL_R; // snap to pre-scroll top (scroll happens after)
             l7FdBallVY = 0;
             l7FdRidingPlat = p;
             break;
           } else if (inGap) {
             l7FdScorePlat(p);
-            break; // one platform per frame
+            break;
           }
         }
       }
@@ -2280,12 +2282,45 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
 
   function drawL7NightPlatSection(x1: number, x2: number, sy: number) {
     const w = x2 - x1; if (w <= 0) return;
-    const ph = L7_FD_PLAT_H;
-    ctx.fillStyle = '#2c2622'; ctx.fillRect(x1, sy, w, ph);
-    ctx.fillStyle = '#443a34'; ctx.fillRect(x1, sy, w, 5);
-    ctx.fillStyle = '#152010'; ctx.fillRect(x1, sy, w, ph * 0.55);
-    ctx.fillStyle = '#213218'; ctx.fillRect(x1, sy, w, ph * 0.22);
-    ctx.fillStyle = 'rgba(160,200,140,0.07)'; ctx.fillRect(x1, sy, w, ph * 0.55);
+    const ph = L7_FD_PLAT_H; // e.g. 24 px
+    const mossH = Math.round(ph * 0.50); // top half = moss cap
+    const stoneH = ph - mossH;           // bottom half = stone body
+
+    // ── Stone body ──────────────────────────────────────────────────────────
+    const sg = ctx.createLinearGradient(0, sy + mossH, 0, sy + ph);
+    sg.addColorStop(0, '#2a2018'); sg.addColorStop(1, '#181008');
+    ctx.fillStyle = sg; ctx.fillRect(x1, sy + mossH, w, stoneH);
+
+    // Stone seams (subtle vertical lines like level 1)
+    ctx.save(); ctx.globalAlpha = 0.18; ctx.fillStyle = '#100a04';
+    const seams = Math.floor(w / 80);
+    for (let i = 1; i <= seams; i++) ctx.fillRect(x1 + w*i/(seams+1), sy+mossH+4, 2, stoneH-4);
+    ctx.restore();
+
+    // Moonlight sheen on stone face
+    ctx.fillStyle = 'rgba(140,160,210,0.05)'; ctx.fillRect(x1, sy+mossH, w, stoneH);
+
+    // ── Moss cap ────────────────────────────────────────────────────────────
+    ctx.fillStyle = '#1c3010'; ctx.fillRect(x1, sy, w, mossH);          // dark moss body
+    ctx.fillStyle = '#2e4a1a'; ctx.fillRect(x1, sy, w, Math.round(mossH*0.45)); // lighter moss
+    ctx.fillStyle = '#3d5e22'; ctx.fillRect(x1, sy, w, Math.round(mossH*0.20)); // very top, brightest
+
+    // Moonlit highlight on top edge
+    ctx.fillStyle = 'rgba(160,200,140,0.18)'; ctx.fillRect(x1, sy, w, 2);
+
+    // Shadow under moss cap (where moss meets stone)
+    ctx.fillStyle = 'rgba(0,0,0,0.30)'; ctx.fillRect(x1, sy+mossH, w, 3);
+
+    // ── Grass tufts ─────────────────────────────────────────────────────────
+    ctx.fillStyle = '#2e4a14';
+    const tufts = Math.max(2, Math.floor(w / 65));
+    for (let i = 0; i < tufts; i++) {
+      const gx = x1 + 10 + (w - 20) * (i / Math.max(1, tufts - 1));
+      ctx.beginPath();
+      ctx.moveTo(gx, sy); ctx.lineTo(gx-2, sy-5); ctx.lineTo(gx, sy-3);
+      ctx.lineTo(gx+2, sy-6); ctx.lineTo(gx+5, sy-2); ctx.lineTo(gx+6, sy);
+      ctx.closePath(); ctx.fill();
+    }
   }
 
   function drawL7Ball(x: number, y: number, spin: number, vy: number) {
