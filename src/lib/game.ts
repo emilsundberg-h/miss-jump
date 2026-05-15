@@ -37,7 +37,7 @@ const FLAP_OBS_DEFS: { wx: number; gapFrac: number }[] = (() => {
   for (let x = 480; x < 10200; x += 300 + r() * 130) list.push({ wx: x, gapFrac: 0.12 + r() * 0.60 });
   return list;
 })();
-const FL_GAP_H      = 210;  // gap height px
+const FL_GAP_H      = 220;  // gap height px
 const FL_OBS_W      = 88;   // obstacle cloud width px
 const FL_GRAVITY    = 2000;
 const FL_FLAP_V     = -580;
@@ -104,6 +104,16 @@ const L7_OUTRO_DUR    = 4.5;  // outro animation duration (s)
 const L7_FD_GAP_WF    = 0.10;  // gap width fraction (normal)
 const L7_FD_GAP_WF_EZ = 0.14;  // gap width fraction (easy)
 const L7_FD_SPACING_F = 0.42;  // vertical spacing between platforms as fraction of H
+
+// ── Level 8: Scooter ─────────────────────────────────────────────────────────
+const SCOOT_BAR_MIN = 30;  // minimum world Y of hang bars
+
+// ── Level 9: Penthouse (Doodle Jump) ─────────────────────────────────────────
+const L9_GRAVITY   = 1800;   // px/s²
+const L9_BOUNCE_VY = 700;    // px/s upward on platform bounce
+const L9_MOVE_SPD  = 320;    // px/s horizontal
+const L9_WIN_Y     = 3000;   // world Y of penthouse floor
+const L9_PLAT_H    = 12;     // platform collision + visual thickness
 
 const TAU = Math.PI * 2;
 
@@ -407,6 +417,84 @@ const FALL4_COIN_DEFS: CoinDef[] = [];
   }
 })();
 
+// ===== Level 8: Scooter — only grind bars, stars packed under each bar =====
+const { SCOOT_PLATFORMS, SCOOT_COIN_DEFS, SCOOT_STAGE_START, SCOOT_FINISH_X } = (() => {
+  let s = 87654321, x = 0;
+  const r  = () => { s = (s * 1664525 + 1013904223) >>> 0; return (s >>> 0) / 4294967296; };
+  const ri = (lo: number, hi: number) => Math.round(lo + r() * (hi - lo));
+  const plats: PlatformDef[] = [], coins: CoinDef[] = [];
+
+  // Add a bar at given height, pack stars densely underneath (every 40px)
+  const B = (w: number, barY: number) => {
+    plats.push({ x, w, y: barY });
+    const starY = barY - 32;  // below bar where hanging body passes
+    const nStars = Math.max(1, Math.floor(w / 40));
+    for (let i = 0; i < nStars; i++)
+      coins.push({ x: x + (i + 0.5) * w / nStars, y: starY, t: r() * Math.PI * 2 });
+    x += w;
+  };
+  const GAP = (w: number) => { x += w; };
+
+  // Launching bar — player starts here (y=0, drawn as gold bar like the rest)
+  plats.push({ x: 0, w: 420, y: 0 }); x = 420;
+
+  // Bar length categories
+  const SHORT  = () => ri(65,  105);
+  const MEDIUM = () => ri(115, 175);
+  const LONG   = () => ri(200, 290);
+  // Bar heights — wide spread, clearly different levels
+  const H1 = () => ri(42, 58);   // low
+  const H2 = () => ri(78, 98);   // mid
+  const H3 = () => ri(115, 138); // high
+
+  // ── Tutorial — easy long bars at low height first ──────────────────────
+  GAP(60);  B(LONG(),   H1()); GAP(130); B(LONG(),   H1());
+  GAP(130); B(MEDIUM(), H2()); GAP(125); B(MEDIUM(), H1());
+  GAP(120); B(LONG(),   H2()); GAP(130); B(SHORT(),  H1());
+  GAP(115); B(MEDIUM(), H3()); GAP(125); B(SHORT(),  H2());
+  GAP(120); B(LONG(),   H1()); GAP(135); B(MEDIUM(), H2());
+  GAP(125); B(SHORT(),  H3()); GAP(115); B(LONG(),   H1());
+  // x ≈ 2 100
+
+  // ── Procedural zones ─────────────────────────────────────────────────────
+  const TARGET = 18200;
+  while (x < TARGET) {
+    const prog = Math.min(1, x / TARGET);
+    const d    = Math.pow(prog, 1.3);
+
+    // Gap between bars — wide so you definitely fall if you miss
+    GAP(ri(Math.round(150 + d * 80), Math.round(200 + d * 120)));
+
+    // Randomise height
+    const hRoll = r();
+    const barH = hRoll < 0.33 ? H1() : hRoll < 0.66 ? H2() : H3();
+
+    // Bar length
+    const roll = r();
+    let bw: number;
+    if (roll < 0.30 + d * 0.18) bw = SHORT();
+    else if (roll < 0.65)        bw = MEDIUM();
+    else                         bw = LONG();
+    B(bw, barH);
+
+    // Occasional chain (2–3 bars, each with its own height)
+    if (r() < d * 0.50 + 0.04) {
+      const n = 1 + Math.floor(r() * (1 + d * 1.8));
+      for (let i = 0; i < n; i++) {
+        GAP(ri(Math.round(100 + d * 25), Math.round(140 + d * 40)));
+        const hr2 = r();
+        const bh2 = hr2 < 0.33 ? H1() : hr2 < 0.66 ? H2() : H3();
+        const r2 = r();
+        B(r2 < 0.35 ? SHORT() : r2 < 0.70 ? MEDIUM() : LONG(), bh2);
+      }
+    }
+  }
+
+  const stageStart = x + 100;
+  plats.push({ x: stageStart, w: 700, y: 0, isStage: true });
+  return { SCOOT_PLATFORMS: plats, SCOOT_COIN_DEFS: coins, SCOOT_STAGE_START: stageStart, SCOOT_FINISH_X: stageStart + 200 };
+})();
+
 // ===== Character customisation =====
 export interface CharCustom {
   hair: string; hairMid: string; hairHi: string;
@@ -634,7 +722,7 @@ function renderMissLi(
 }
 
 // ===== Main factory =====
-export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId: 1|2|3|4|5|6|7 = 1, custom: CharCustom = DEFAULT_CUSTOM, easy = false): GameControls {
+export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId: 1|2|3|4|5|6|7|8|9 = 1, custom: CharCustom = DEFAULT_CUSTOM, easy = false): GameControls {
   const ctx = canvas.getContext('2d')!;
   let DPR = 1, W = 0, H = 0;
 
@@ -654,13 +742,13 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   const groundY = () => H * 0.78;
 
   // Level-specific data (local vars shadow module-level constants where names differ)
-  const platforms    = levelId === 1 ? PLATFORMS    : levelId === 4 ? FALL4_PLATFORMS    : CLOUD_PLATFORMS;
-  const spikeDefs    = levelId === 1 ? SPIKE_DEFS   : levelId === 4 ? FALL4_SPIKE_DEFS   : CLOUD_SPIKE_DEFS;
-  const levelCoinDefs = levelId === 1 ? COIN_DEFS   : levelId === 4 ? FALL4_COIN_DEFS    : CLOUD_COIN_DEFS;
-  const scenery      = levelId === 1 ? SCENERY           : CLOUD_SCENERY;
-  const stageStart   = levelId === 1 ? STAGE_START       : CLOUD_STAGE_START;
-  const finishX      = levelId === 1 ? FINISH_X          : CLOUD_FINISH_X;
-  const pal          = levelId === 1 ? PAL               : CLOUD_PAL;
+  const platforms    = levelId === 1 ? PLATFORMS : levelId === 4 ? FALL4_PLATFORMS : levelId === 8 ? SCOOT_PLATFORMS : CLOUD_PLATFORMS;
+  const spikeDefs    = levelId === 1 ? SPIKE_DEFS : levelId === 4 ? FALL4_SPIKE_DEFS : levelId === 8 ? ([] as SpikePos[]) : CLOUD_SPIKE_DEFS;
+  const levelCoinDefs = levelId === 1 ? COIN_DEFS : levelId === 4 ? FALL4_COIN_DEFS : levelId === 8 ? SCOOT_COIN_DEFS : CLOUD_COIN_DEFS;
+  const scenery      = levelId === 1 ? SCENERY     : CLOUD_SCENERY;
+  const stageStart   = levelId === 1 ? STAGE_START : levelId === 8 ? SCOOT_STAGE_START : CLOUD_STAGE_START;
+  const finishX      = levelId === 1 ? FINISH_X    : levelId === 8 ? SCOOT_FINISH_X    : CLOUD_FINISH_X;
+  const pal          = levelId === 1 ? PAL         : CLOUD_PAL;
 
   // Player state
   const player = {
@@ -696,6 +784,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (levelId === 5) { startLevel5(); return; }
     if (levelId === 6) { startL6(); return; }
     if (levelId === 7) { startL7(); return; }
+    if (levelId === 9) { startL9(); return; }
     gstate = 'play'; score = 0;
     player.x = 120; player.y = 0; player.vx = MOVE_SPEED; player.vy = 0;
     player.onGround = true; player.jumps = 0; player.alive = true;
@@ -708,9 +797,11 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     cb.onScore(0); cb.onProgress(0);
   }
 
+  let loseTStamp = -999; // ms timestamp of last loss — guards against instant keyboard restart
+
   function loseGame() {
     if (gstate !== 'play') return;
-    gstate = 'lose'; player.alive = false;
+    gstate = 'lose'; player.alive = false; loseTStamp = performance.now();
     for (let i = 0; i < 24; i++) particles.push({
       x: screenX(player.x), y: screenY(player.y, true),
       vx: (Math.random() - 0.5) * 400, vy: -Math.random() * 400 - 100,
@@ -732,6 +823,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (levelId === 5) { if (gstate === 'play') updateLevel5(dt); return; }
     if (levelId === 6) { if (gstate === 'play') updateL6(dt); return; }
     if (levelId === 7) { if (gstate === 'play') updateL7(dt); return; }
+    if (levelId === 9) { if (gstate === 'play' || gstate === 'stage') updateL9(dt); return; }
     // Level 4 runner phase falls through to the normal platform runner below
     if (gstate === 'play') {
       // Speed ramps up progressively with distance (1× → 2× over the level)
@@ -751,15 +843,40 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
         if (player.flipT >= 1) { player.flipping = false; player.flipT = 0; }
       }
 
+      // Level 8: front-wheel catch — genuine left-side approach only
+      // l8PrevX < bar.x: player was left of bar.x last frame (not dropping from above mid-bar)
+      if (levelId === 8 && !player.onGround) {
+        const fwx = player.x + 14;
+        for (const bar of platforms) {
+          if (bar.y < SCOOT_BAR_MIN || bar.isStage) continue;
+          if (fwx >= bar.x && player.x <= bar.x + 18 && l8PrevX < bar.x) {
+            if (player.y >= bar.y - 32 && player.y <= bar.y + 12) {
+              player.y = bar.y; player.vy = 0; player.onGround = true; player.jumps = 0;
+              player.flipping = false; player.flipT = 0;
+              l8CaughtBar = true;
+              break;
+            }
+          }
+        }
+      }
+      l8PrevX = player.x;
+
       const p = platformAt(player.x);
       if (p) {
-        // Only land if the player was at or above the platform surface last frame.
-        // This prevents snapping back up after falling into a gap and reaching the next platform.
-        if (player.y <= p.y && player.vy >= 0 && prevY >= p.y - 2) {
+        if (levelId === 8 && l8CaughtBar && p.y >= SCOOT_BAR_MIN) {
+          // Grinding: pin player to bar surface
+          player.y = p.y; player.vy = 0; player.onGround = true;
+        } else if (!l8CaughtBar && player.y <= p.y && player.vy >= 0 && prevY >= p.y - 2) {
+          // Normal top-landing
           player.y = p.y; player.vy = 0; player.onGround = true; player.jumps = 0;
           player.flipping = false; player.flipT = 0;
+
         }
-      } else { player.onGround = false; }
+        if (levelId === 8 && p.y === 0) l8CaughtBar = false;
+      } else {
+        player.onGround = false;
+        if (levelId === 8) l8CaughtBar = false;
+      }
 
       // Level 4: walking off the last cloud → switch to fall phase instead of dying
       if (player.y < -80) {
@@ -776,10 +893,12 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
         }
       }
 
-      // Coins
+      // Coins (level 8: only collect while grinding; use player.y as centre)
+      const coinCy = levelId === 8 ? player.y : player.y + PLAYER_H / 2;
       for (const c of coins) {
         if (c.collected) continue;
-        const dx = c.x - player.x, dy = c.y - (player.y + PLAYER_H / 2);
+        if (levelId === 8 && !l8CaughtBar) continue;
+        const dx = c.x - player.x, dy = c.y - coinCy;
         if (dx * dx + dy * dy < 40 * 40) {
           c.collected = true; score += 10; spawnSparkle(c.x, c.y);
         }
@@ -2614,8 +2733,11 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     flScrollX += spd * dt;
     flVY += FL_GRAVITY * dt;
     flY  += flVY * dt;
-    const PW = 30, PH = 50;
-    if (flY < 0 || flY + PH > H) { loseGame(); return; }
+    const PW = 30;
+    // Character: feet rendered at (flY+25), head top at (flY+25-70 = flY-45). Use 3px margin.
+    const charTop = flY - 42;
+    const charBot = flY + 28;
+    if (charTop < 0 || charBot > H) { loseGame(); return; }
     const gapH = easy ? FL_GAP_H * 1.65 : FL_GAP_H;
     for (const o of FLAP_OBS_DEFS) {
       const sx = o.wx - flScrollX;
@@ -2625,7 +2747,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
       const gapY = easy ? Math.max(H * 0.12, Math.min(H - gapH - H * 0.12, rawGapY + (H - gapH) * 0.1)) : rawGapY;
       const px = W * 0.22;
       if (px + PW > sx && px < sx + FL_OBS_W) {
-        if (flY < gapY || flY + PH > gapY + gapH) { loseGame(); return; }
+        if (charTop < gapY || charBot > gapY + gapH) { loseGame(); return; }
       }
     }
     score = FLAP_OBS_DEFS.filter(o => o.wx < flScrollX + W * 0.22).length;
@@ -2887,6 +3009,129 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   let fall4LightningNext = 1.5;   // seconds until next bolt
   let fall4LightningFlash = 0;    // current flash brightness 0..1
   let fall4LightningPts: [number, number][] = []; // bolt path
+
+  // ── Level 8 scooter state ──
+  let l8OnBar = false;
+  let l8WasOnBar = false;
+  let l8HangT = 0;          // 0=riding pose, 1=hanging pose (animates smoothly)
+  let l8LastDrawT = -1;     // ms timestamp of last drawScootPlayer call
+  let l8CaughtBar = false;  // only true when triggered by front-wheel catch — NOT normal top-landing
+  let l8PrevX = 0;  // player x from previous frame — used to detect genuine left-side approach
+
+  // ── Level 9 state ──
+  interface L9Plat { wy: number; wx: number; w: number; moving: boolean; phase: number; spikes?: number[] }
+  let l9X = 0, l9Y = 0, l9VX = 0, l9VY = 0, l9CamY = 0;
+  let l9HoldL = false, l9HoldR = false;
+  let l9Plats: L9Plat[] = [];
+  let l9WinT = 0, l9WinTargetX = 0;
+
+  function startL9() {
+    l9X = W / 2; l9Y = L9_PLAT_H; l9VX = 0; l9VY = L9_BOUNCE_VY;
+    l9CamY = 0; l9HoldL = false; l9HoldR = false;
+    let s = 87654321;
+    const r = () => { s = (s * 1664525 + 1013904223) >>> 0; return (s >>> 0) / 4294967296; };
+    // Physics: max reachable vertical gap = L9_PLAT_H + L9_BOUNCE_VY²/(2*L9_GRAVITY)
+    //          = 12 + 700²/3600 ≈ 148px. Use 118px max to keep comfortable margin.
+    const MAX_GAP   = 118;
+    const MAX_H_REACH = Math.floor(L9_MOVE_SPD * 2 * L9_BOUNCE_VY / L9_GRAVITY * 1.05);
+    let prevCx = W / 2;
+    l9Plats = [{ wy: 0, wx: W * 0.12, w: W * 0.76, moving: false, phase: 0 }];
+    let y = 0;
+    while (y < L9_WIN_Y) {
+      // Gap scales from 50–80px early to 80–118px late, never exceeds MAX_GAP
+      const prog = Math.min(1, y / L9_WIN_Y);
+      const minG = Math.round(50 + prog * 30);
+      const maxG = Math.round(80 + prog * 38);
+      y += minG + r() * (maxG - minG);
+      if (y >= L9_WIN_Y) break;
+      const pw = Math.min(50 + r() * 100, W - 20);
+      const lo = Math.max(8, prevCx - MAX_H_REACH - pw / 2);
+      const hi = Math.min(W - pw - 8, prevCx + MAX_H_REACH - pw / 2);
+      const wx = lo + r() * Math.max(0, hi - lo);
+      const mov = r() > 0.55 && y > 300;
+      // Spikes on wider static platforms (at least 110px wide, after y=400)
+      let spikes: number[] | undefined;
+      if (!mov && pw >= 110 && y > 400 && r() < 0.45) {
+        const n = pw >= 160 ? 2 : 1;
+        spikes = [];
+        for (let si = 0; si < n; si++) spikes.push(Math.round(pw * (si + 1) / (n + 1) - 8));
+      }
+      l9Plats.push({ wy: y, wx, w: pw, moving: mov, phase: r() * TAU, spikes });
+      prevCx = wx + pw / 2;
+    }
+    // Bridge: ensure last platform is within safe single-bounce reach of penthouse
+    const lastPlatY = l9Plats[l9Plats.length - 1].wy;
+    if (L9_WIN_Y - lastPlatY > MAX_GAP) {
+      const bwy = L9_WIN_Y - MAX_GAP;
+      const bpw = 80 + r() * 60;
+      l9Plats.push({ wy: bwy, wx: Math.max(8, Math.min(W - bpw - 8, (W - bpw) * r())), w: bpw, moving: false, phase: 0 });
+    }
+    l9Plats.push({ wy: L9_WIN_Y, wx: 0, w: W, moving: false, phase: 0 });
+    particles = []; score = 0; gstate = 'play';
+    cb.onStateChange('play'); cb.onScore(0); cb.onProgress(0);
+  }
+
+  function updateL9(dt: number) {
+    const L9_SPIKE_W = 16;
+
+    // Stage: walk to mic stand, then win
+    if (gstate === 'stage') {
+      l9WinT += dt;
+      const dx = l9WinTargetX - l9X;
+      if (Math.abs(dx) > 3) l9X += Math.sign(dx) * Math.min(Math.abs(dx) * 4, 110) * dt;
+      else l9X = l9WinTargetX;
+      l9Y = L9_WIN_Y + L9_PLAT_H;
+      l9VY = 0;
+      score = Math.floor(l9Y / 100); cb.onScore(score);
+      cb.onProgress(1);
+      if (l9WinT > 2.2) winGame();
+      return;
+    }
+
+    const t = performance.now() / 1000;
+    const dir = (l9HoldR ? 1 : 0) - (l9HoldL ? 1 : 0);
+    l9VX += (dir * L9_MOVE_SPD - l9VX) * Math.min(1, dt * 12);
+    l9X += l9VX * dt;
+    if (l9X < 0) l9X += W; else if (l9X > W) l9X -= W;
+    l9VY -= L9_GRAVITY * dt;
+    l9Y  += l9VY * dt;
+    if (l9VY < 0) {
+      for (const p of l9Plats) {
+        const pWx = p.moving ? p.wx + Math.sin(t * 1.2 + p.phase) * 38 : p.wx;
+        if (l9Y > p.wy && l9Y < p.wy + L9_PLAT_H + Math.abs(l9VY) * dt + 4) {
+          if (l9X >= pWx - 6 && l9X <= pWx + p.w + 6) {
+            // Spike collision
+            if (p.spikes) {
+              for (const sOx of p.spikes) {
+                if (l9X >= pWx + sOx - 2 && l9X <= pWx + sOx + L9_SPIKE_W + 2) {
+                  loseGame(); return;
+                }
+              }
+            }
+            l9Y = p.wy + L9_PLAT_H; l9VY = L9_BOUNCE_VY;
+            const cols = ['#ffd86b','#c97fff','#ff9ec0','#7eb8ff'];
+            for (let i = 0; i < 6; i++) particles.push({
+              x: l9X, y: H - (l9Y - l9CamY),
+              vx: (Math.random() - 0.5) * 220, vy: -Math.random() * 120 - 40,
+              life: 0.6, color: cols[i % 4], size: 3 + Math.random() * 3,
+            });
+            break;
+          }
+        }
+      }
+    }
+    l9CamY = Math.max(l9CamY, l9Y - H * 0.62);
+    if (l9Y < l9CamY - 40) { loseGame(); return; }
+    // Reached penthouse: land and start walk-to-mic animation
+    if (l9Y >= L9_WIN_Y) {
+      l9Y = L9_WIN_Y + L9_PLAT_H; l9VY = 0; l9VX = 0;
+      l9WinT = 0; l9WinTargetX = W / 2;
+      gstate = 'stage'; cb.onStateChange('stage');
+      return;
+    }
+    score = Math.floor(l9Y / 100); cb.onScore(score);
+    cb.onProgress(Math.min(1, l9Y / L9_WIN_Y));
+  }
 
   function startFall4() {
     // Phase 1: platform runner (same init as levels 1&2)
@@ -3192,6 +3437,615 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     }
   }
 
+  // ── Level 9: Penthouse ───────────────────────────────────────────────────────
+
+  function drawL9() {
+    const t = performance.now() / 1000;
+
+    // Sky: vivid purple/pink dusk
+    const sg = ctx.createLinearGradient(0, 0, 0, H);
+    sg.addColorStop(0,    '#3a0e44');
+    sg.addColorStop(0.18, '#5b1858');
+    sg.addColorStop(0.38, '#8a2266');
+    sg.addColorStop(0.62, '#612063');
+    sg.addColorStop(0.82, '#2e1338');
+    sg.addColorStop(1,    '#100612');
+    ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H);
+
+    // Stars (screen-space, deterministic — no flicker)
+    ctx.save();
+    for (let i = 0; i < 90; i++) {
+      const sx = (Math.sin(i * 7.31) * 0.5 + 0.5) * W;
+      const sy = (Math.sin(i * 13.73) * 0.5 + 0.5) * H * 0.65;
+      const r = 0.3 + (Math.sin(i * 2.91) * 0.5 + 0.5) * 1.2;
+      ctx.globalAlpha = 0.35 + (Math.sin(t * (1 + (i % 5) * 0.4) + i) * 0.5 + 0.5) * 0.55;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    // 4-point sparkle stars
+    for (let i = 0; i < 6; i++) {
+      const sx = 60 + (Math.sin(i * 41.31) * 0.5 + 0.5) * (W - 120);
+      const sy = 40 + (Math.sin(i * 67.13) * 0.5 + 0.5) * H * 0.38;
+      const s = 3 + (Math.sin(i * 11.71) * 0.5 + 0.5) * 3;
+      ctx.globalAlpha = 0.55 + Math.sin(t * (0.7 + i * 0.3) + i * 1.2) * 0.3;
+      ctx.fillStyle = '#fff5d4';
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - s);
+      ctx.lineTo(sx + s * 0.3, sy - s * 0.3); ctx.lineTo(sx + s, sy);
+      ctx.lineTo(sx + s * 0.3, sy + s * 0.3); ctx.lineTo(sx, sy + s);
+      ctx.lineTo(sx - s * 0.3, sy + s * 0.3); ctx.lineTo(sx - s, sy);
+      ctx.lineTo(sx - s * 0.3, sy - s * 0.3);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    // Spotlight cones from top corners
+    ctx.save();
+    const c1 = ctx.createLinearGradient(W * 0.22, 0, W * 0.62, H);
+    c1.addColorStop(0, 'rgba(255,220,180,0.38)');
+    c1.addColorStop(0.55, 'rgba(255,180,140,0.10)');
+    c1.addColorStop(1, 'rgba(255,180,140,0)');
+    ctx.fillStyle = c1;
+    ctx.beginPath();
+    ctx.moveTo(W * 0.12, 0); ctx.lineTo(W * 0.39, 0);
+    ctx.lineTo(W * 0.72, H); ctx.lineTo(W * 0.30, H);
+    ctx.closePath(); ctx.fill();
+    const c2 = ctx.createLinearGradient(W * 0.61, 0, W * 0.39, H);
+    c2.addColorStop(0, 'rgba(255,220,180,0.28)');
+    c2.addColorStop(0.55, 'rgba(255,180,140,0.07)');
+    c2.addColorStop(1, 'rgba(255,180,140,0)');
+    ctx.fillStyle = c2;
+    ctx.beginPath();
+    ctx.moveTo(W * 0.61, 0); ctx.lineTo(W * 0.88, 0);
+    ctx.lineTo(W * 0.70, H); ctx.lineTo(W * 0.28, H);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+
+    // City skyline (parallax, pinned to bottom of screen)
+    const skylineOffX = -l9CamY * 0.08 * 0.15;
+    const cityBuildings = [
+      [0.01, 0.09, 0.11], [0.15, 0.06, 0.08], [0.25, 0.13, 0.16],
+      [0.46, 0.08, 0.10], [0.60, 0.07, 0.12], [0.71, 0.11, 0.09],
+      [0.87, 0.08, 0.13], [-0.01, 0.07, 0.07],
+    ] as [number, number, number][];
+    for (const [fx, fw, fh] of cityBuildings) {
+      const bx = fx * W + skylineOffX, bw = fw * W, bh = fh * H;
+      const by = H - bh;
+      ctx.fillStyle = '#1a0a1e'; ctx.fillRect(bx, by, bw, bh);
+      ctx.fillStyle = 'rgba(232,168,90,0.55)';
+      const cols2 = Math.max(2, Math.floor(bw / 14));
+      const rows2 = Math.max(2, Math.floor(bh / 16));
+      for (let r2 = 0; r2 < rows2; r2++) {
+        for (let c2 = 0; c2 < cols2; c2++) {
+          if (Math.sin(c2 * 2.3 + r2 * 1.7 + fx * 50) > 0.08)
+            ctx.fillRect(bx + 4 + c2 * (bw - 8) / cols2, by + 6 + r2 * (bh - 12) / rows2, 3, 4);
+        }
+      }
+    }
+    // Horizon haze
+    const haze = ctx.createLinearGradient(0, H - 80, 0, H);
+    haze.addColorStop(0, 'rgba(255,120,154,0)');
+    haze.addColorStop(0.6, 'rgba(255,120,154,0.14)');
+    haze.addColorStop(1, 'rgba(255,100,130,0.22)');
+    ctx.fillStyle = haze; ctx.fillRect(0, H - 80, W, 80);
+
+    // Platforms
+    for (const p of l9Plats) {
+      const pWx = p.moving ? p.wx + Math.sin(t * 1.2 + p.phase) * 38 : p.wx;
+      const pSy = H - (p.wy - l9CamY);
+      if (pSy < -80 || pSy > H + 80) continue;
+      const isTop = p.wy >= L9_WIN_Y;
+      const mov = p.moving;
+
+      if (isTop) {
+        // Goal: golden penthouse platform with curtain folds + footlights
+        const haloG = ctx.createRadialGradient(pWx + p.w / 2, pSy - 8, 0, pWx + p.w / 2, pSy - 8, p.w * 0.7);
+        haloG.addColorStop(0, 'rgba(255,176,74,0.35)'); haloG.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = haloG; ctx.fillRect(pWx - p.w * 0.4, pSy - 60, p.w * 1.8, 80);
+        // Curtain folds above platform
+        ctx.save();
+        ctx.strokeStyle = '#a01e3a'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+        const nFolds = Math.max(3, Math.floor(p.w / 50));
+        for (let i = 0; i < nFolds; i++) {
+          const fx2 = pWx + 10 + i * (p.w - 20) / Math.max(1, nFolds - 1);
+          ctx.beginPath();
+          ctx.moveTo(fx2, pSy - 58);
+          ctx.quadraticCurveTo(fx2 + 7, pSy - 26, fx2, pSy);
+          ctx.stroke();
+        }
+        ctx.restore();
+        // Depth
+        ctx.fillStyle = '#6a2c1c'; ctx.fillRect(pWx, pSy + 18, p.w, 16);
+        // Golden top surface
+        const platG = ctx.createLinearGradient(0, pSy, 0, pSy + 22);
+        platG.addColorStop(0, '#fff2a8'); platG.addColorStop(0.5, '#ffb04a'); platG.addColorStop(1, '#c25a1c');
+        ctx.fillStyle = platG; ctx.fillRect(pWx, pSy, p.w, 22);
+        // Footlight bulbs
+        const bulbs = Math.max(3, Math.floor(p.w / 26));
+        for (let i = 0; i < bulbs; i++) {
+          const bx2 = pWx + 14 + i * (p.w - 28) / Math.max(1, bulbs - 1);
+          const by2 = pSy + 28;
+          ctx.fillStyle = '#fff2a8'; ctx.beginPath(); ctx.arc(bx2, by2, 5, 0, TAU); ctx.fill();
+          ctx.fillStyle = 'rgba(255,214,110,0.25)'; ctx.beginPath(); ctx.arc(bx2, by2, 11, 0, TAU); ctx.fill();
+        }
+        // Label
+        ctx.save();
+        ctx.fillStyle = 'rgba(42,14,28,0.85)';
+        ctx.font = '700 9px "Inter",sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('P E N T H O U S E', pWx + p.w / 2, pSy + 14);
+        ctx.restore();
+        // Mic stand in the centre of the penthouse
+        drawMicStand(pWx + p.w / 2, pSy);
+      } else if (mov) {
+        // Moving platform: neon pink glow
+        const gg = ctx.createRadialGradient(pWx + p.w / 2, pSy + 6, 0, pWx + p.w / 2, pSy + 6, p.w * 0.65);
+        gg.addColorStop(0, 'rgba(255,111,180,0.30)'); gg.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = gg; ctx.fillRect(pWx - 30, pSy - 38, p.w + 60, 64);
+        // Depth
+        ctx.fillStyle = '#5a0c44'; ctx.fillRect(pWx, pSy + L9_PLAT_H + 2, p.w, 16);
+        // Hot pink top
+        ctx.fillStyle = '#ff8ed0'; ctx.fillRect(pWx, pSy, p.w, L9_PLAT_H + 2);
+        // Core shine
+        ctx.fillStyle = 'rgba(255,245,232,0.70)'; ctx.fillRect(pWx + 6, pSy + 4, p.w - 12, 4);
+        // Bottom drip glow
+        ctx.fillStyle = 'rgba(255,111,180,0.65)'; ctx.fillRect(pWx + 12, pSy + L9_PLAT_H + 14, p.w - 24, 3);
+      } else {
+        // Regular stage platform: pink/rose gradient
+        const sideG = ctx.createLinearGradient(0, pSy + L9_PLAT_H, 0, pSy + L9_PLAT_H + 14);
+        sideG.addColorStop(0, '#8a2c5e'); sideG.addColorStop(1, '#3a0e2a');
+        ctx.fillStyle = sideG; ctx.fillRect(pWx, pSy + L9_PLAT_H, p.w, 14);
+        const topG = ctx.createLinearGradient(0, pSy, 0, pSy + L9_PLAT_H);
+        topG.addColorStop(0, '#ffd6e0'); topG.addColorStop(0.4, '#f595b6'); topG.addColorStop(1, '#a83a78');
+        ctx.fillStyle = topG; ctx.fillRect(pWx, pSy, p.w, L9_PLAT_H);
+        // Highlight stripe
+        ctx.fillStyle = 'rgba(255,245,232,0.50)'; ctx.fillRect(pWx + 6, pSy + 2, p.w - 12, 3);
+        // Plank notches
+        const notches = Math.max(2, Math.floor(p.w / 60));
+        ctx.save();
+        ctx.strokeStyle = '#a83a78'; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.5;
+        for (let i = 1; i < notches; i++) {
+          const nx = pWx + p.w * (i / notches);
+          ctx.beginPath(); ctx.moveTo(nx, pSy + 3); ctx.lineTo(nx, pSy + L9_PLAT_H - 1); ctx.stroke();
+        }
+        ctx.restore();
+        // Bottom rim pink glow
+        ctx.fillStyle = 'rgba(255,111,180,0.35)'; ctx.fillRect(pWx + 4, pSy + L9_PLAT_H + 11, p.w - 8, 3);
+        // Spikes on top of platform surface
+        if (p.spikes) {
+          const SW = 16, SH = 24;
+          for (const sOx of p.spikes) {
+            const sx2 = pWx + sOx, sy2 = pSy;
+            // Shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.30)';
+            ctx.beginPath(); ctx.ellipse(sx2 + SW/2, sy2 - 1, SW*0.55, 3, 0, 0, TAU); ctx.fill();
+            // Main spike
+            ctx.fillStyle = '#e8c8f0';
+            ctx.beginPath(); ctx.moveTo(sx2, sy2); ctx.lineTo(sx2+SW/2, sy2-SH); ctx.lineTo(sx2+SW, sy2); ctx.closePath(); ctx.fill();
+            // Right face
+            ctx.fillStyle = '#b870d8';
+            ctx.beginPath(); ctx.moveTo(sx2+SW/2, sy2-SH); ctx.lineTo(sx2+SW/2+4, sy2-SH+12); ctx.lineTo(sx2+SW-2, sy2-2); ctx.closePath(); ctx.fill();
+            // Tip
+            ctx.fillStyle = '#fff0ff';
+            ctx.beginPath(); ctx.arc(sx2+SW/2, sy2-SH+1, 2, 0, TAU); ctx.fill();
+            // Outline
+            ctx.strokeStyle = '#3a0a4a'; ctx.lineWidth = 1.2;
+            ctx.beginPath(); ctx.moveTo(sx2, sy2); ctx.lineTo(sx2+SW/2, sy2-SH); ctx.lineTo(sx2+SW, sy2); ctx.stroke();
+            // Base
+            ctx.fillStyle = '#c060d0'; ctx.fillRect(sx2+3, sy2-5, SW-6, 5);
+          }
+        }
+      }
+    }
+
+    // Player
+    const pScrY = H - (l9Y - l9CamY);
+    ctx.save();
+    ctx.translate(l9X, pScrY);
+    const isStage = gstate === 'stage';
+    const walkDir = isStage ? (l9WinTargetX > l9X ? 1 : -1) : 0;
+    if (walkDir < 0) ctx.scale(-1, 1);
+    const tilt = !isStage && (l9VX > 30 ? 0.06 : l9VX < -30 ? -0.06 : 0);
+    if (tilt) ctx.rotate(tilt);
+    let legSwing: number, armSwing: number, inAir: boolean;
+    if (isStage) {
+      const atMic = Math.abs(l9X - l9WinTargetX) < 4;
+      legSwing = atMic ? 0 : Math.sin(l9WinT * 10) * 0.55;
+      armSwing = atMic ? -0.3 : Math.sin(l9WinT * 10 + Math.PI) * 0.35;
+      inAir = false;
+    } else {
+      legSwing = l9VY > 0 ? 0.55 : -0.3;
+      armSwing = l9VY > 0 ? -0.5 : 0.4;
+      inAir = true;
+    }
+    renderMissLi(ctx, 0, 0, legSwing, armSwing, inAir, isStage && Math.abs(l9X - l9WinTargetX) < 4, custom);
+    ctx.restore();
+
+    drawParticles();
+    drawVignette();
+  }
+
+  // ── Level 8: Scooter ─────────────────────────────────────────────────────────
+
+  function drawScootGround(sx: number, sy: number, w: number) {
+    ctx.fillStyle = '#18181e'; ctx.fillRect(sx, sy, w, H - sy);
+    // Curb edge
+    const cg = ctx.createLinearGradient(0, sy, 0, sy + 7);
+    cg.addColorStop(0, '#4a4a5a'); cg.addColorStop(1, '#1e1e28');
+    ctx.fillStyle = cg; ctx.fillRect(sx, sy, w, 7);
+    ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.fillRect(sx, sy, w, 2);
+    // Dashed lane markings
+    const dashW = 28, cycleW = 50;
+    const firstD = Math.floor(-sx / cycleW) * cycleW + sx;
+    ctx.fillStyle = 'rgba(255,255,255,0.10)';
+    for (let dx = firstD; dx < sx + w; dx += cycleW) {
+      const x1 = Math.max(sx, dx), x2 = Math.min(sx + w, dx + dashW);
+      if (x2 > x1) ctx.fillRect(x1, sy + 22, x2 - x1, 3);
+    }
+  }
+
+  function drawScootRail(sx: number, sy: number, w: number) {
+    const gy = groundY();
+    // Support pillars
+    const nPil = Math.max(2, Math.floor(w / 60) + 1);
+    ctx.fillStyle = '#303040';
+    for (let i = 0; i <= nPil; i++) {
+      const px = sx + i * w / nPil;
+      ctx.fillRect(px - 3, sy + 10, 6, gy - sy - 10);
+    }
+    // Neon underside glow
+    const gg = ctx.createLinearGradient(0, sy, 0, sy + 22);
+    gg.addColorStop(0, 'rgba(0,200,255,0.50)');
+    gg.addColorStop(1, 'rgba(0,200,255,0)');
+    ctx.fillStyle = gg; ctx.fillRect(sx - 5, sy, w + 10, 22);
+    // Rail beam (gradient — light top, dark bottom)
+    const rg = ctx.createLinearGradient(0, sy, 0, sy + 10);
+    rg.addColorStop(0, '#d0e0f0'); rg.addColorStop(0.35, '#7090b0'); rg.addColorStop(1, '#304060');
+    ctx.fillStyle = rg; ctx.fillRect(sx, sy, w, 10);
+    // Top shine
+    ctx.fillStyle = 'rgba(255,255,255,0.65)'; ctx.fillRect(sx + 1, sy, w - 2, 2);
+  }
+
+  function drawScootWheel(wx: number, wy: number, r: number, t: number) {
+    const sa = t * 7;
+
+    // Outer glow halo
+    ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 22;
+    ctx.fillStyle = 'rgba(220,235,255,0.18)';
+    ctx.beginPath(); ctx.arc(wx, wy, r + 4, 0, TAU); ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Tire
+    ctx.fillStyle = '#18101e';
+    ctx.beginPath(); ctx.arc(wx, wy, r, 0, TAU); ctx.fill();
+
+    // Bright rim
+    ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 14;
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(wx, wy, r * 0.54, 0, TAU); ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Shimmering spokes
+    for (let i = 0; i < 6; i++) {
+      const a = sa + i * TAU / 6;
+      const shimmer = 0.5 + 0.5 * Math.sin(t * 14 + i * 1.9);
+      ctx.shadowColor = '#c8e8ff'; ctx.shadowBlur = 8 * shimmer;
+      ctx.strokeStyle = `rgba(255,255,255,${0.6 + shimmer * 0.4})`;
+      ctx.lineWidth = 1 + shimmer * 1.2;
+      ctx.beginPath();
+      ctx.moveTo(wx + Math.cos(a) * r * 0.16, wy + Math.sin(a) * r * 0.16);
+      ctx.lineTo(wx + Math.cos(a) * r * 0.52, wy + Math.sin(a) * r * 0.52);
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+
+    // 4-point star sparkles at rim
+    for (let i = 0; i < 6; i++) {
+      const a = sa + i * TAU / 6;
+      const px = wx + Math.cos(a) * r * 0.56, py = wy + Math.sin(a) * r * 0.56;
+      const s = 0.3 + 0.7 * Math.abs(Math.sin(t * 18 + i * 2.4));
+      const len = 3.5 * s;
+      ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 10 * s;
+      ctx.strokeStyle = `rgba(255,255,255,${s})`; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(px - len, py); ctx.lineTo(px + len, py);
+      ctx.moveTo(px, py - len); ctx.lineTo(px, py + len);
+      ctx.stroke();
+      // diagonal
+      const d = len * 0.6;
+      ctx.strokeStyle = `rgba(255,255,255,${s * 0.5})`;
+      ctx.beginPath();
+      ctx.moveTo(px - d, py - d); ctx.lineTo(px + d, py + d);
+      ctx.moveTo(px + d, py - d); ctx.lineTo(px - d, py + d);
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+
+    // Center hub — bright white core
+    ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 12;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(wx, wy, r * 0.18, 0, TAU); ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // ease-in-out cubic: smooth start and end
+  const easeIO = (x: number) => x < 0.5 ? 2*x*x : -1+(4-2*x)*x;
+
+  function drawScootPlayer() {
+    if (!player.alive && gstate !== 'win' && gstate !== 'stage') return;
+
+    const now = performance.now();
+    const dt8 = l8LastDrawT < 0 ? 0 : Math.min(0.05, (now - l8LastDrawT) / 1000);
+    l8LastDrawT = now;
+    const t = now / 1000;
+    const R = 11;
+    const sx = screenX(player.x);
+    const footSY = screenY(player.y, false);
+    const inAir = !player.onGround;
+
+    l8OnBar = l8CaughtBar && player.onGround && player.y >= SCOOT_BAR_MIN;
+
+    // Smooth hang transition
+    const target = l8OnBar ? 1 : 0;
+    l8HangT += (target - l8HangT) * Math.min(1, (l8OnBar ? 4.5 : 9) * dt8);
+    const e = easeIO(Math.max(0, Math.min(1, l8HangT)));
+
+    // Catch burst on bar entry
+    if (l8OnBar && !l8WasOnBar && gstate === 'play') {
+      for (let i = 0; i < 10; i++) particles.push({
+        x: sx + (Math.random() - 0.5) * 30, y: footSY,
+        vx: (Math.random() - 0.5) * 220, vy: -(Math.random() * 90 + 20),
+        life: 0.30, color: Math.random() > 0.5 ? '#ffe090' : '#fff0c0', size: 2 + Math.random() * 2,
+      });
+    }
+    l8WasOnBar = l8OnBar;
+
+    // Grinding sparks when on bar
+    if (l8OnBar && gstate === 'play' && Math.random() > 0.3) {
+      particles.push({
+        x: sx + 14 + (Math.random() - 0.5) * 12, y: footSY,
+        vx: -MOVE_SPEED * 0.4 + (Math.random() - 0.5) * 60,
+        vy: -(Math.random() * 70 + 15),
+        life: 0.18, color: Math.random() > 0.5 ? '#ffffa0' : '#ffd060', size: 1.5 + Math.random() * 2,
+      });
+    }
+
+    // Front wheel always at contact point; rear swings down as e→1
+    // frameAngle: PI = horizontal riding, PI-1.05 = ~60° downward hanging
+    const fwx = sx + 14;
+    const fwy = footSY - R;
+    const frameLen = 38;
+    const frameAngle = Math.PI - e * 1.05;
+    const rwx = fwx + Math.cos(frameAngle) * frameLen;
+    const rwy = fwy + Math.sin(frameAngle) * frameLen;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+
+    // Ground shadow (riding only)
+    if (player.y < 8 && e < 0.4) {
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.beginPath(); ctx.ellipse(sx, groundY() + 1, 28, 5, 0, 0, TAU); ctx.fill();
+    }
+
+    // Frame
+    ctx.strokeStyle = '#1e1c2e'; ctx.lineWidth = 10;
+    ctx.beginPath(); ctx.moveTo(fwx, fwy); ctx.lineTo(rwx, rwy); ctx.stroke();
+    ctx.strokeStyle = '#38344c'; ctx.lineWidth = 7;
+    ctx.beginPath(); ctx.moveTo(fwx, fwy); ctx.lineTo(rwx, rwy); ctx.stroke();
+
+    // Deck aligned to frame
+    const deckMx = (fwx + rwx) / 2;
+    const deckMy = (fwy + rwy) / 2;
+    ctx.save();
+    ctx.translate(deckMx, deckMy);
+    ctx.rotate(frameAngle);
+    ctx.fillStyle = '#242438';
+    ctx.beginPath(); ctx.roundRect(-21, -4, 42, 8, 3); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.07)';
+    for (let i = 0; i < 3; i++) ctx.fillRect(-16 + i * 12, -3, 8, 6);
+    ctx.fillStyle = 'rgba(0,200,255,0.30)'; ctx.fillRect(-19, 4, 38, 2);
+    ctx.restore();
+
+    // Stem at front (85% from rear toward front = near front wheel)
+    const stemAngle = frameAngle + Math.PI / 2 - e * Math.PI;
+    const stemLen = 26;
+    const stemBx = rwx + (fwx - rwx) * 0.85;
+    const stemBy = rwy + (fwy - rwy) * 0.85;
+    const stemTx = stemBx + Math.cos(stemAngle) * stemLen;
+    const stemTy = stemBy + Math.sin(stemAngle) * stemLen;
+    ctx.strokeStyle = '#a8a8c0'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(stemBx, stemBy); ctx.lineTo(stemTx, stemTy); ctx.stroke();
+    // Handlebar parallel to frame
+    const hbDx = Math.cos(frameAngle) * 9, hbDy = Math.sin(frameAngle) * 9;
+    ctx.strokeStyle = '#9090b0'; ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(stemTx + hbDx, stemTy + hbDy);
+    ctx.lineTo(stemTx - hbDx * 0.7, stemTy - hbDy * 0.7);
+    ctx.stroke();
+    const perp = { x: Math.cos(stemAngle) * 3, y: Math.sin(stemAngle) * 3 };
+    ctx.strokeStyle = '#c030a8'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(stemTx + hbDx - perp.x, stemTy + hbDy - perp.y);
+    ctx.lineTo(stemTx + hbDx + perp.x, stemTy + hbDy + perp.y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(stemTx - hbDx * 0.7 - perp.x, stemTy - hbDy * 0.7 - perp.y);
+    ctx.lineTo(stemTx - hbDx * 0.7 + perp.x, stemTy - hbDy * 0.7 + perp.y);
+    ctx.stroke();
+
+    // Wheels on top of everything
+    drawScootWheel(fwx, fwy, R, t);
+    drawScootWheel(rwx, rwy, R, t);
+
+    // Miss Li: interpolates from upright-on-deck (e=0) to hanging-below-stem (e=1)
+    const liX = deckMx - Math.sin(frameAngle) * 5 + (stemTx + Math.cos(stemAngle) * 8 - (deckMx - Math.sin(frameAngle) * 5)) * e;
+    const liY = deckMy - Math.cos(frameAngle) * 5 + (stemTy + Math.sin(stemAngle) * 8 - (deckMy - Math.cos(frameAngle) * 5)) * e;
+    const baseRot = inAir ? -0.20 : -0.13;
+    const liRot  = baseRot + e * (-Math.PI - baseRot);  // counter-clockwise (moturs)
+    const legSwing = e > 0.5 ? 0.4 : (inAir ? 0.35 : Math.sin(player.runT * 0.5) * 0.12);
+    const armSwing = -0.65 + e * 1.25;
+
+    ctx.save();
+    ctx.translate(liX, liY);
+    ctx.rotate(liRot);
+    if (e > 0.5) ctx.scale(-1, 1);
+    renderMissLi(ctx, 0, 0, legSwing, armSwing, inAir || e > 0.3,
+      gstate === 'stage' || gstate === 'win', custom);
+    ctx.restore();
+
+    ctx.restore();
+  }
+
+  function drawL8() {
+    const gy = groundY();
+    const cityY = H * 0.80;
+
+    // ── Sky: dusk encore — deep purple → magenta (design spec) ──────────────
+    const sg = ctx.createLinearGradient(0, 0, 0, H);
+    sg.addColorStop(0,    '#1f1228');
+    sg.addColorStop(0.28, '#3b1644');
+    sg.addColorStop(0.55, '#6f1b5e');
+    sg.addColorStop(0.78, '#a83876');
+    sg.addColorStop(1,    '#c0407a');
+    ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H);
+
+    // Dark overlay on lower half so platforms contrast against the bright sky
+    const darkFog = ctx.createLinearGradient(0, H * 0.42, 0, H);
+    darkFog.addColorStop(0, 'rgba(0,0,0,0)');
+    darkFog.addColorStop(1, 'rgba(4,0,10,0.74)');
+    ctx.fillStyle = darkFog; ctx.fillRect(0, H * 0.42, W, H);
+
+    // ── Stars ──────────────────────────────────────────────────────────────
+    let ss = 88881111;
+    const sr = () => { ss = (ss * 1664525 + 1013904223) >>> 0; return (ss >>> 0) / 4294967296; };
+    for (let i = 0; i < 80; i++) {
+      const sx2 = sr() * W * 3;
+      const sy2 = sr() * H * 0.58;
+      const r   = 0.8 + sr() * 1.4;
+      const op  = 0.3 + sr() * 0.5;
+      const screenX2 = sx2 - camX * 0.04;
+      if (screenX2 < -4 || screenX2 > W + 4) continue;
+      ctx.fillStyle = `rgba(255,255,255,${op.toFixed(2)})`;
+      ctx.beginPath(); ctx.arc(screenX2, sy2, r, 0, TAU); ctx.fill();
+    }
+
+    // ── City silhouette ────────────────────────────────────────────────────
+    const bldgSpacing = 90, bldgPar = 0.10;
+    const firstBldg = Math.floor(camX * bldgPar / bldgSpacing);
+    for (let i = firstBldg - 1; i < firstBldg + Math.ceil(W / bldgSpacing) + 3; i++) {
+      const bx = i * bldgSpacing - camX * bldgPar;
+      let s2 = ((i * 73856093) ^ 19349663) >>> 0;
+      const rng2 = () => { s2 = (s2 * 1664525 + 1013904223) >>> 0; return (s2 >>> 0) / 4294967296; };
+      const bw = 55 + rng2() * 80;
+      const bh = H * (0.18 + rng2() * 0.30);
+      const by = cityY - bh;
+      ctx.fillStyle = '#1a0a1e'; ctx.fillRect(bx, by, bw, bh);
+      ctx.fillStyle = 'rgba(232,168,90,0.55)';
+      for (let c = 0; c * 11 < bw - 8; c++) {
+        for (let row = 0; row * 16 < bh - 8; row++) {
+          if (Math.sin(c * 2.3 + row * 1.7 + i * 5.1) > 0.1)
+            ctx.fillRect(bx + 5 + c * 11, by + 6 + row * 16, 4, 5);
+        }
+      }
+      if (rng2() > 0.45) {
+        ctx.fillStyle = '#1a0a1e'; ctx.fillRect(bx + bw / 2 - 1, by - 14, 2, 14);
+        ctx.shadowColor = '#ff6fb4'; ctx.shadowBlur = 8;
+        ctx.fillStyle = '#ff6fb4';
+        ctx.beginPath(); ctx.arc(bx + bw / 2, by - 14, 2, 0, TAU); ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    // ── Neon billboard "TONIGHT" ────────────────────────────────────────────
+    {
+      const billPar = 0.22;
+      const bx = 900 - camX * billPar, by = H * 0.24, bw = 160, bh = 78;
+      if (bx > -bw - 20 && bx < W + 20) {
+        ctx.fillStyle = '#180720';
+        ctx.beginPath(); ctx.roundRect(bx - 5, by - 5, bw + 10, bh + 10, 7); ctx.fill();
+        ctx.shadowColor = '#ff6fb4'; ctx.shadowBlur = 14;
+        ctx.strokeStyle = '#ff6fb4'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 5); ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#fff5e8';
+        ctx.font = 'italic 900 24px "Playfair Display", serif';
+        ctx.textAlign = 'center'; ctx.fillText('TONIGHT', bx + bw / 2, by + 40);
+        ctx.fillStyle = '#ff8eb4';
+        ctx.font = '800 10px "Inter", sans-serif';
+        ctx.fillText('MISS JUMP', bx + bw / 2, by + 58);
+      }
+    }
+
+    // ── Floor neon edge ─────────────────────────────────────────────────────
+    ctx.shadowColor = '#ff6fb4'; ctx.shadowBlur = 14;
+    ctx.fillStyle = 'rgba(255,111,180,0.5)'; ctx.fillRect(0, gy + 4, W, 5);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,214,234,0.9)'; ctx.fillRect(0, gy + 5, W, 2);
+
+    // ── Platforms ──────────────────────────────────────────────────────────
+    for (const p of platforms) {
+      const sx = p.x - camX, sy = gy - p.y;
+      if (sx + p.w < -40 || sx > W + 40) continue;
+      if (p.isStage) {
+        const sfg = ctx.createLinearGradient(0, sy, 0, sy + H);
+        sfg.addColorStop(0, '#2e1024'); sfg.addColorStop(1, '#0a0212');
+        ctx.fillStyle = sfg; ctx.fillRect(sx, sy, p.w, H - sy);
+        ctx.shadowColor = '#ff6fb4'; ctx.shadowBlur = 10;
+        ctx.fillStyle = '#ff6fb4'; ctx.fillRect(sx, sy, p.w, 4);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = 'rgba(255,214,234,0.85)'; ctx.fillRect(sx, sy + 1, p.w, 2);
+      } else {
+        const ph = 18;
+        // Halos
+        ctx.shadowColor = '#c46cff'; ctx.shadowBlur = 18;
+        ctx.fillStyle = 'rgba(196,108,255,0.16)';
+        ctx.beginPath(); ctx.ellipse(sx + p.w / 2, sy + ph + 10, p.w / 2 + 30, 18, 0, 0, TAU); ctx.fill();
+        ctx.shadowColor = '#ff6fb4'; ctx.shadowBlur = 12;
+        ctx.fillStyle = 'rgba(255,111,180,0.18)';
+        ctx.beginPath(); ctx.ellipse(sx + p.w / 2, sy - 2, p.w / 2 + 28, 12, 0, 0, TAU); ctx.fill();
+        ctx.shadowBlur = 0;
+        // Side depth
+        const sideG = ctx.createLinearGradient(0, sy + ph, 0, sy + ph + 12);
+        sideG.addColorStop(0, '#8a2c5e'); sideG.addColorStop(1, '#3a0e2a');
+        ctx.fillStyle = sideG; ctx.fillRect(sx, sy + ph, p.w, 12);
+        // Top surface
+        const platG = ctx.createLinearGradient(0, sy, 0, sy + ph);
+        platG.addColorStop(0, '#ffd6e0'); platG.addColorStop(0.5, '#f595b6'); platG.addColorStop(1, '#a83a78');
+        ctx.fillStyle = platG; ctx.fillRect(sx, sy, p.w, ph);
+        // Highlight
+        ctx.fillStyle = 'rgba(255,245,232,0.55)'; ctx.fillRect(sx + 5, sy + 3, p.w - 10, 3);
+        // Plank notches
+        ctx.strokeStyle = 'rgba(168,58,120,0.55)'; ctx.lineWidth = 1.5;
+        const notches = Math.max(2, Math.floor(p.w / 60));
+        for (let n = 1; n < notches; n++) {
+          const nx = sx + p.w * n / notches;
+          ctx.beginPath(); ctx.moveTo(nx, sy + 5); ctx.lineTo(nx, sy + ph - 2); ctx.stroke();
+        }
+        // Neon grind rail on underside
+        ctx.shadowColor = '#ff6fb4'; ctx.shadowBlur = 10;
+        ctx.fillStyle = '#ff6fb4'; ctx.fillRect(sx + 4, sy + ph + 12, p.w - 8, 4);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#ffd6ea'; ctx.fillRect(sx + 4, sy + ph + 12, p.w - 8, 2);
+        ctx.shadowColor = '#c46cff'; ctx.shadowBlur = 8;
+        ctx.fillStyle = 'rgba(196,108,255,0.7)'; ctx.fillRect(sx + 5, sy + ph + 14, p.w - 10, 3);
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    drawCoins();
+
+    if (player.x > SCOOT_STAGE_START - W) {
+      const stgX = SCOOT_STAGE_START - camX;
+      drawMicStand(stgX + 120, gy); drawSpeaker(stgX + 300, gy); drawSpeaker(stgX + 500, gy);
+    }
+
+    if (gstate !== 'start') drawScootPlayer();
+    drawParticles();
+    drawVignette();
+  }
+
   // ── Drawing ──
   // Draw order guarantees trees are ALWAYS rendered before ground/obstacles/player:
   // sky → sun → clouds → mountains → waterfalls → farTrees → midTrees → mist
@@ -3204,6 +4058,8 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (levelId === 5) { drawLevel5(); return; }
     if (levelId === 6) { drawL6(); return; }
     if (levelId === 7) { drawL7(); return; }
+    if (levelId === 8) { drawL8(); return; }
+    if (levelId === 9) { drawL9(); return; }
     if (levelId === 1) {
       drawSky(); drawSun(); drawClouds(); drawMountains();
       drawWaterfalls();
@@ -3739,6 +4595,9 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     if (levelId === 5) return;
     if (levelId === 6) { l6Jump(); return; }
     if (levelId === 7) { if (l7Phase === 'approach') l7ApPressJump(); return; }
+    if (levelId === 9) return;
+    // Level 8: jumping out of a grind releases the bar first
+    if (levelId === 8 && l8CaughtBar) { l8CaughtBar = false; player.jumps = 0; }
     if (!player.alive) return;
     if (player.jumps < 2) {
       player.vy = player.jumps === 0 ? JUMP_VEL : JUMP_VEL * 0.86;
@@ -3753,7 +4612,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   function releaseJump() {
     if (levelId === 6) { l6ReleaseJump(); return; }
     if (levelId === 7) { if (l7Phase === 'approach') l7ApReleaseJump(); return; }
-    if (levelId <= 2 || (levelId === 4 && fall4Phase === 'run')) {
+    if (levelId <= 2 || levelId === 8 || (levelId === 4 && fall4Phase === 'run')) {
       if (player.vy < 0 && player.holding) {
         const t = Math.min(1, player.holdTime / MAX_HOLD);
         player.vy *= JUMP_CUT_MIN + (1 - JUMP_CUT_MIN) * t;
@@ -3765,7 +4624,10 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   function pointerDown(x: number, y: number) {
     if (gstate === 'start') { startGame(); return; }
     if (gstate === 'win')  { tries = 1; startGame(); return; }
-    if (gstate === 'lose') { tries++; startGame(); return; }
+    if (gstate === 'lose') {
+      if (performance.now() - loseTStamp < 600) return; // ignore held-key spam
+      tries++; startGame(); return;
+    }
     if (gstate !== 'play') return;
     if (levelId === 3) { flVY = FL_FLAP_V; return; }
     if (levelId === 4 && fall4Phase === 'fall') {
@@ -3786,6 +4648,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
       }
       return;
     }
+    if (levelId === 9) { if (x < W / 2) l9HoldL = true; else l9HoldR = true; return; }
     pressJump();
   }
 
@@ -3796,6 +4659,8 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     } else if (levelId === 7) {
       if (l7Phase === 'approach') l7ApReleaseJump();
       else if (l7Phase === 'curl' || l7Phase === 'falldown') { l7FdHoldL = false; l7FdHoldR = false; }
+    } else if (levelId === 9) {
+      if (x < W / 2) l9HoldL = false; else l9HoldR = false;
     } else {
       releaseJump();
     }

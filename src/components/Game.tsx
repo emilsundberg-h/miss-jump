@@ -8,7 +8,7 @@ import {
   drawPreviewChar,
 } from "@/lib/game";
 
-type LevelId = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+type LevelId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 
 // Volume targets per game state
 const VOL = { menu: 0.07 as number, play: 0.7 as number, dead: 0.07 as number };
@@ -205,14 +205,14 @@ export default function Game() {
 
       {isPlaying && levelId && (
         <div style={{ position: "fixed", top: 18, left: 18, right: 62, display: "flex", justifyContent: "space-between", alignItems: "flex-start", pointerEvents: "none", zIndex: 5 }}>
-          <HudCard label="Spotlight" value={String(score)} />
-          <HudCard label="To the Stage" progress={progress} />
+          <HudCard label={levelId === 9 ? "Höjd" : "Spotlight"} value={levelId === 9 ? `${score} m` : String(score)} />
+          <HudCard label={levelId === 9 ? "Till Penthouse" : "To the Stage"} progress={progress} />
         </div>
       )}
 
       {tapHint && (
         <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", color: "rgba(255,255,255,0.7)", fontSize: 12, letterSpacing: "0.2em", textTransform: "uppercase", background: "rgba(20,14,26,0.4)", padding: "8px 16px", borderRadius: 99, backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", pointerEvents: "none", zIndex: 3 }}>
-          {levelId === 7 ? "Tryck vänster · höger halva för att styra" : "Tap or press space to jump · hold for higher jump"}
+          {levelId === 7 || levelId === 9 ? "Hold left · right half to steer" : "Tap or press space to jump · hold for higher jump"}
         </div>
       )}
 
@@ -323,6 +323,12 @@ export default function Game() {
             <LevelCard num={7} title="Night Fall" description="Miss Li rolls into a ball and falls through the forest floor. Guide her through platform gaps in the dark — faster and faster!" difficulty={4} mechanic="← → Steer"
               palette={{ bg: "linear-gradient(150deg,#040c1c,#06122a)", accent: "#6ab87a", dot: "#c8e0ff", badge: "#142840" }}
               best={bests[7]} onClick={() => setLevelId(7)} />
+            <LevelCard num={8} title="Scooter" description="Ride Miss Li's electric scooter through the city at night. Jump the gaps and grind the rails." difficulty={3} mechanic="⚡ Jump · Grind"
+              palette={{ bg: "linear-gradient(150deg,#06040e,#0e0820)", accent: "#00d4ff", dot: "#80e8ff", badge: "#083850" }}
+              best={bests[8]} onClick={() => setLevelId(8)} />
+            <LevelCard num={9} title="Penthouse" description="Bounce up through the high-rises. Steer left and right to land on platforms — moving ones too. Reach the rooftop penthouse." difficulty={3} mechanic="← → Steer"
+              palette={{ bg: "linear-gradient(150deg,#08040e,#100a20)", accent: "#ffd86b", dot: "#ffe8a0", badge: "#5a4010" }}
+              best={bests[9]} onClick={() => setLevelId(9)} />
           </div>
         </div>
       </Overlay>
@@ -330,7 +336,7 @@ export default function Game() {
       {/* ── In-game start ── */}
       <Overlay show={!!levelId && state === "start"} onClick={pressJump}>
         <TitleCard>
-          <Eyebrow>{["","Forest Tour · Act 1","Cloud Tour · Act 2","Miss Flappy · Act 3","Free Fall · Act 4","Mic Drop · Act 5","Fairground · Act 6","Night Fall · Act 7"][levelId!]}</Eyebrow>
+          <Eyebrow>{["","Forest Tour · Act 1","Cloud Tour · Act 2","Miss Flappy · Act 3","Free Fall · Act 4","Mic Drop · Act 5","Fairground · Act 6","Night Fall · Act 7","Scooter · Act 8","Penthouse · Act 9"][levelId!]}</Eyebrow>
           <BigTitle>Miss Jump</BigTitle>
           <Subtitle>{levelId === 1
             ? "Jump over spikes and gaps. Reach the stage by the waterfall."
@@ -344,7 +350,11 @@ export default function Game() {
             ? "Top-down arena. Use the joystick to move. Tap the stage to throw your mic. Hit all 40 artists!"
             : levelId === 6
             ? "Roller-skate the fairground. Tap to jump. Dodge cotton candy, ice cream and popcorn. It gets faster and faster!"
-            : "Walk Miss Li into the glowing hole in the forest floor. She'll roll into a ball — then steer left and right to fall through the gaps before the platforms push you off the top!"
+            : levelId === 7
+            ? "Walk Miss Li into the glowing hole in the forest floor. She'll roll into a ball — then steer left and right to fall through the gaps before the platforms push you off the top!"
+            : levelId === 8
+            ? "Ride through the city at night. Tap to jump the gaps and grind the neon rails!"
+            : "Hold left or right to steer. Bounce up through the high-rises and reach the rooftop penthouse!"
           }</Subtitle>
           <Cta onClick={pressJump}>Start the Show <Key>SPACE</Key></Cta>
           <div onClick={e => e.stopPropagation()}>
@@ -390,7 +400,7 @@ export default function Game() {
           <Subtitle>The spotlight turns on. The audience holds its breath.</Subtitle>
           {winData && (
             <div style={{ display: "flex", gap: 28, justifyContent: "center", margin: "18px 0 4px" }}>
-              <Stat label="Spotlight" value={String(winData.score)} />
+              <Stat label={levelId === 8 ? "Stars ⭐" : "Spotlight"} value={String(winData.score)} />
               <Stat label="Attempts" value={String(winData.tries)} />
             </div>
           )}
