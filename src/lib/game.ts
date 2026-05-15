@@ -26,6 +26,16 @@ const L5_MIC_SPEED    = 480;
 const L5_MIC_RETURN   = 380;
 const L5_MIC_RANGE    = 280;
 const L5_ENEMY_COLORS = ['#ff9ec0','#ffd86b','#b8eecc','#d4a8ff','#ffc898','#a8e8f0','#f0c4d8','#e8e070'];
+const L5_RIVAL_PAL = [
+  { outfit:'#1f4ea8', hair:'#f7d090', skin:'#f4d2b8' },
+  { outfit:'#2c8a4a', hair:'#3a1810', skin:'#f4d2b8' },
+  { outfit:'#7a3a8a', hair:'#e26a8a', skin:'#f4d2b8' },
+  { outfit:'#c0394a', hair:'#1a1018', skin:'#dcaa84' },
+  { outfit:'#e88a2a', hair:'#5a2418', skin:'#a86f4a' },
+  { outfit:'#5b6cd6', hair:'#fff5e8', skin:'#dcaa84' },
+  { outfit:'#1a8a8a', hair:'#7a3a26', skin:'#f4d2b8' },
+  { outfit:'#8a1a6a', hair:'#f0e0c0', skin:'#f4d2b8' },
+];
 interface L5Enemy { x:number; y:number; vx:number; vy:number; color:string; id:number; alive:boolean; hitT:number; angle:number }
 interface L5Spawn { wx:number; wy:number; t:number; color:string } // pending spawns (with preview flash)
 
@@ -978,13 +988,17 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   let l5WinPhase = false;
   let l5WinT = 0;
   let l5EnemyId = 0;
+  let l5Audience: { angle: number; rFrac: number; r: number; hasPhone: boolean; hasGlow: boolean; glowCol: string }[] = [];
+  let l5RingAngles: number[] = [];   // pre-shuffled angles for waiting rivals
 
-  const l5SW = () => W * 0.88;   // stage width
-  const l5SH = () => H * 0.80;   // stage height
+  const l5SW = () => W * 0.88;
+  const l5SH = () => H * 0.80;
   const l5SX = () => (W - l5SW()) / 2;
   const l5SY = () => (H - l5SH()) / 2;
-  const l5MicX2 = () => W / 2;   // mic stand position
-  const l5MicY2 = () => l5SY() + 70;
+  const l5R     = () => Math.min(W, H) * 0.38;   // circular stage radius
+  const l5RingR = () => l5R() + 44;               // outer bulb-ring radius
+  const l5MicX2 = () => W / 2;
+  const l5MicY2 = () => H / 2 - l5R() * 0.68;    // top of stage circle
 
   function spawnInterval() {
     // Continuous ramp: reaches current-end difficulty (1.1s) at 50%, then keeps going to 0.7s
@@ -999,13 +1013,32 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   }
 
   function startLevel5() {
-    l5PX = W / 2; l5PY = H * 0.65;
+    l5PX = W / 2; l5PY = H * 0.60;
     l5PVX = 0; l5PVY = 0; l5PAngle = -Math.PI / 2;
     l5JDX = 0; l5JDY = 0;
     l5MicOut = false; l5MicDist = 0;
     l5Enemies = []; l5Spawns = [];
     l5SpawnTimer = 2.0; l5SpawnCount = 0; l5ElimCount = 0;
     l5WinPhase = false; l5WinT = 0; l5EnemyId = 0;
+    // Pre-generate ring angles for waiting rivals (evenly spaced, slight jitter)
+    l5RingAngles = Array.from({ length: L5_TOTAL }, (_, i) => (i / L5_TOTAL) * TAU + (Math.random() - 0.5) * 0.12);
+    // Shuffle so they leave in random order as they spawn
+    for (let i = l5RingAngles.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [l5RingAngles[i], l5RingAngles[j]] = [l5RingAngles[j], l5RingAngles[i]];
+    }
+    // Pre-generate audience positions (deterministic, stable across frames)
+    l5Audience = [];
+    let as = 87654321;
+    const ar = () => { as = (as * 1664525 + 1013904223) >>> 0; return (as >>> 0) / 4294967296; };
+    const glowCols = ['#ff6fb4','#c46cff','#6e8aff','#5fd6a3'];
+    for (let i = 0; i < 280; i++) {
+      const angle = ar() * TAU;
+      const rFrac = 1.14 + ar() * 5.5;  // multiples of ringR from center
+      const hasPhone = ar() < 0.18;
+      const hasGlow = !hasPhone && ar() < 0.12;
+      l5Audience.push({ angle, rFrac, r: 7 + ar() * 1.5, hasPhone, hasGlow, glowCol: glowCols[Math.floor(ar() * 4)] });
+    }
     gstate = 'play'; score = 0;
     cb.onStateChange('play'); cb.onScore(0); cb.onProgress(0);
   }
@@ -1053,8 +1086,11 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     } else {
       l5PVX *= 0.8; l5PVY *= 0.8;
     }
-    l5PX = Math.max(sx + 22, Math.min(sx + sw - 22, l5PX + l5PVX * dt));
-    l5PY = Math.max(sy + 22, Math.min(sy + sh - 22, l5PY + l5PVY * dt));
+    const nx = l5PX + l5PVX * dt, ny = l5PY + l5PVY * dt;
+    const boundR = l5R() - 24;
+    const pd = Math.hypot(nx - W / 2, ny - H / 2);
+    if (pd <= boundR) { l5PX = nx; l5PY = ny; }
+    else { const ba = Math.atan2(ny - H / 2, nx - W / 2); l5PX = W/2 + Math.cos(ba)*boundR; l5PY = H/2 + Math.sin(ba)*boundR; }
 
     // Mic physics
     if (l5MicOut) {
@@ -1115,13 +1151,10 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
       l5SpawnTimer -= dt;
       if (l5SpawnTimer <= 0) {
         l5SpawnTimer = spawnInterval();
-        // Create spawn flash then enemy
-        const side = Math.floor(Math.random() * 4);
-        let wx = 0, wy = 0;
-        if (side === 0) { wx = sx + Math.random()*sw; wy = sy + 12; }
-        else if (side === 1) { wx = sx + Math.random()*sw; wy = sy + sh - 12; }
-        else if (side === 2) { wx = sx + 12; wy = sy + Math.random()*sh; }
-        else                 { wx = sx + sw - 12; wy = sy + Math.random()*sh; }
+        // Spawn on the outer ring
+        const sa = Math.random() * TAU;
+        const wx = W / 2 + Math.cos(sa) * l5RingR();
+        const wy = H / 2 + Math.sin(sa) * l5RingR();
         const col = L5_ENEMY_COLORS[l5SpawnCount % L5_ENEMY_COLORS.length];
         l5Spawns.push({ wx, wy, t: 0.9, color: col });
         l5SpawnCount++;
@@ -1140,57 +1173,177 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   }
 
   function drawLevel5() {
-    const sx = l5SX(), sy = l5SY(), sw = l5SW(), sh = l5SH();
-    // Background
-    ctx.fillStyle = '#0a0810'; ctx.fillRect(0, 0, W, H);
-    // Audience silhouettes at edges
-    ctx.fillStyle = '#1a1220';
-    ctx.fillRect(0, 0, W, sy); ctx.fillRect(0, sy+sh, W, H-sy-sh);
-    ctx.fillRect(0, sy, sx, sh); ctx.fillRect(sx+sw, sy, W-sx-sw, sh);
-    // Stage floor — wooden planks (top-down)
-    const stageGrad = ctx.createLinearGradient(sx, sy, sx, sy+sh);
-    stageGrad.addColorStop(0, '#4a3020'); stageGrad.addColorStop(1, '#362418');
-    ctx.fillStyle = stageGrad; ctx.fillRect(sx, sy, sw, sh);
-    // Plank lines
-    ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 2;
-    for (let py2 = sy + 40; py2 < sy + sh; py2 += 40) {
-      ctx.beginPath(); ctx.moveTo(sx, py2); ctx.lineTo(sx+sw, py2); ctx.stroke();
-    }
-    // Wood grain
-    ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.lineWidth = 1;
-    for (let py2 = sy + 20; py2 < sy + sh; py2 += 40) {
-      ctx.beginPath(); ctx.moveTo(sx, py2); ctx.lineTo(sx+sw, py2); ctx.stroke();
-    }
-    // Stage edge highlight
-    ctx.strokeStyle = '#6a4828'; ctx.lineWidth = 3;
-    ctx.strokeRect(sx, sy, sw, sh);
-    // Spotlights on stage
-    [[W*0.25, sy+sh*0.3],[W*0.5, sy+sh*0.5],[W*0.75, sy+sh*0.3]].forEach(([lx,ly]) => {
-      const lg = ctx.createRadialGradient(lx, ly, 0, lx, ly, 120);
-      lg.addColorStop(0, 'rgba(255,240,200,0.12)'); lg.addColorStop(1, 'rgba(255,240,200,0)');
-      ctx.fillStyle = lg; ctx.fillRect(lx-130, ly-130, 260, 260);
-    });
+    const CX = W / 2, CY = H / 2;
+    const stageR = l5R(), ringR = l5RingR();
 
-    // Mic stand (top-down: small oval + pole)
-    const msx = l5MicX2(), msy = l5MicY2();
-    ctx.fillStyle = '#1a1118';
-    ctx.beginPath(); ctx.ellipse(msx, msy+6, 18, 6, 0, 0, TAU); ctx.fill();
-    ctx.fillStyle = '#3a2848'; ctx.fillRect(msx-2, msy-30, 4, 36);
-    ctx.fillStyle = '#1f1a28';
-    ctx.beginPath(); ctx.ellipse(msx, msy-34, 7, 5, 0, 0, TAU); ctx.fill();
-    ctx.fillStyle = '#5a5468';
-    ctx.beginPath(); ctx.ellipse(msx-2, msy-36, 3, 3, 0, 0, TAU); ctx.fill();
+    // ── Background: dark radial gradient ──────────────────────────────────────
+    const bg = ctx.createRadialGradient(CX, CY, 0, CX, CY, Math.max(W, H) * 0.7);
+    bg.addColorStop(0, '#1a0a1e'); bg.addColorStop(0.55, '#0a0212'); bg.addColorStop(1, '#000');
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
-    // Spawn flashes
-    for (const s of l5Spawns) {
-      const a = Math.min(1, (0.9 - s.t) * 3) * Math.abs(Math.sin(s.t * 15));
-      ctx.save(); ctx.globalAlpha = a;
-      ctx.fillStyle = s.color;
-      ctx.beginPath(); ctx.arc(s.wx, s.wy, 16, 0, TAU); ctx.fill();
+    // ── Stage light bloom rays (24, faint, radiating outward) ─────────────────
+    ctx.save();
+    const maxRay = Math.max(W, H);
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * TAU;
+      ctx.strokeStyle = '#ff8eb4'; ctx.lineWidth = 38; ctx.globalAlpha = 0.028; ctx.lineCap = 'butt';
+      ctx.beginPath();
+      ctx.moveTo(CX + Math.cos(a) * (stageR + 8), CY + Math.sin(a) * (stageR + 8));
+      ctx.lineTo(CX + Math.cos(a) * maxRay, CY + Math.sin(a) * maxRay);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1; ctx.restore();
+
+    // ── Audience sea (pre-generated positions) ────────────────────────────────
+    for (const aud of l5Audience) {
+      const ar2 = aud.rFrac * ringR;
+      const ax = CX + Math.cos(aud.angle) * ar2, ay = CY + Math.sin(aud.angle) * ar2;
+      if (ax < -30 || ax > W + 30 || ay < -30 || ay > H + 30) continue;
+      ctx.fillStyle = '#040008'; ctx.beginPath(); ctx.ellipse(ax, ay + 8, 12, 9, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#0a0212'; ctx.beginPath(); ctx.arc(ax, ay, aud.r, 0, TAU); ctx.fill();
+      if (aud.hasPhone) {
+        ctx.fillStyle = 'rgba(255,245,212,0.85)'; ctx.fillRect(ax - 1.5, ay - 14, 3, 4);
+      } else if (aud.hasGlow) {
+        ctx.fillStyle = aud.glowCol; ctx.fillRect(ax - 1, ay - 18, 2, 6);
+      }
+    }
+
+    // ── Outer neon ring ───────────────────────────────────────────────────────
+    // Wide purple halo
+    ctx.save();
+    ctx.strokeStyle = '#c46cff'; ctx.lineWidth = 28; ctx.globalAlpha = 0.22;
+    ctx.beginPath(); ctx.arc(CX, CY, ringR + 2, 0, TAU); ctx.stroke();
+    // Thinner pink glow
+    ctx.strokeStyle = '#ff6fb4'; ctx.lineWidth = 11; ctx.globalAlpha = 0.58;
+    ctx.beginPath(); ctx.arc(CX, CY, ringR + 2, 0, TAU); ctx.stroke();
+    // Bright white rim
+    ctx.strokeStyle = '#ffd6ea'; ctx.lineWidth = 2.5; ctx.globalAlpha = 0.92;
+    ctx.beginPath(); ctx.arc(CX, CY, ringR + 2, 0, TAU); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.restore();
+    // Bulbs
+    const bulbCount = 48;
+    for (let i = 0; i < bulbCount; i++) {
+      const a = (i / bulbCount) * TAU;
+      const bx = CX + Math.cos(a) * (ringR + 2), by = CY + Math.sin(a) * (ringR + 2);
+      ctx.fillStyle = (['#fff2a8','#ff8eb4','#c46cff'] as const)[i % 3];
+      ctx.globalAlpha = 0.92; ctx.beginPath(); ctx.arc(bx, by, 5, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.globalAlpha = 1; ctx.beginPath(); ctx.arc(bx, by, 2.2, 0, TAU); ctx.fill();
+    }
+
+    // ── Stage floor: circular wooden disc ─────────────────────────────────────
+    // Side shadow ring
+    ctx.fillStyle = 'rgba(58,24,8,0.65)';
+    ctx.beginPath(); ctx.arc(CX, CY, stageR + 12, 0, TAU); ctx.fill();
+    // Wood radial gradient
+    const woodG = ctx.createRadialGradient(CX, CY, 0, CX, CY, stageR);
+    woodG.addColorStop(0, '#7a3a26'); woodG.addColorStop(0.6, '#5a2418'); woodG.addColorStop(1, '#2e0e0a');
+    ctx.fillStyle = woodG; ctx.beginPath(); ctx.arc(CX, CY, stageR, 0, TAU); ctx.fill();
+    // Concentric grain rings
+    ctx.save();
+    for (let i = 1; i <= 14; i++) {
+      ctx.strokeStyle = '#2a0e08'; ctx.lineWidth = 1.2; ctx.globalAlpha = 0.30;
+      ctx.beginPath(); ctx.arc(CX, CY, (i / 14) * stageR, 0, TAU); ctx.stroke();
+    }
+    // Plank seams (spokes from center)
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * TAU;
+      ctx.strokeStyle = '#1a0604'; ctx.lineWidth = 2; ctx.globalAlpha = 0.42;
+      ctx.beginPath();
+      ctx.moveTo(CX + Math.cos(a) * 28, CY + Math.sin(a) * 28);
+      ctx.lineTo(CX + Math.cos(a) * (stageR - 4), CY + Math.sin(a) * (stageR - 4));
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1; ctx.restore();
+    // Inner edge pink glow
+    ctx.save();
+    ctx.strokeStyle = '#ff8eb4'; ctx.lineWidth = 4; ctx.globalAlpha = 0.62;
+    ctx.beginPath(); ctx.arc(CX, CY, stageR - 2, 0, TAU); ctx.stroke();
+    ctx.strokeStyle = '#ffd6ea'; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.86;
+    ctx.beginPath(); ctx.arc(CX, CY, stageR - 2, 0, TAU); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.restore();
+
+    // ── Center spotlight pool ─────────────────────────────────────────────────
+    const spot = ctx.createRadialGradient(CX, CY, 0, CX, CY, stageR * 0.56);
+    spot.addColorStop(0, 'rgba(255,240,200,0.60)');
+    spot.addColorStop(0.4, 'rgba(255,210,160,0.25)');
+    spot.addColorStop(1, 'rgba(255,200,160,0)');
+    ctx.fillStyle = spot; ctx.beginPath(); ctx.arc(CX, CY, stageR * 0.56, 0, TAU); ctx.fill();
+
+    // ── Confetti on stage ─────────────────────────────────────────────────────
+    const confC = ['#ff8eb4','#c46cff','#fff2a8','#5fd6a3','#fff5e8'];
+    ctx.save();
+    for (let i = 0; i < 80; i++) {
+      const ca = (Math.sin(i * 7.31) * 0.5 + 0.5) * TAU;
+      const cr = (Math.sin(i * 13.73) * 0.5 + 0.5) * (stageR - 30);
+      ctx.save(); ctx.translate(CX + Math.cos(ca) * cr, CY + Math.sin(ca) * cr);
+      ctx.rotate((Math.sin(i * 19.1) * 0.5 + 0.5) * TAU);
+      ctx.fillStyle = confC[i % 5]; ctx.globalAlpha = 0.55;
+      ctx.fillRect(-2.5, -1, 5, 2); ctx.restore();
+    }
+    ctx.restore();
+
+    // ── Waiting rivals in the outer ring ─────────────────────────────────────
+    // Show all rivals that haven't yet been spawned onto the stage
+    for (let i = l5SpawnCount; i < L5_TOTAL; i++) {
+      const a = l5RingAngles[i];
+      const pal = L5_RIVAL_PAL[i % L5_RIVAL_PAL.length];
+      const rx = CX + Math.cos(a) * (ringR + 2);
+      const ry = CY + Math.sin(a) * (ringR + 2);
+      // Scale down slightly and face inward
+      ctx.save();
+      ctx.translate(rx, ry);
+      ctx.scale(0.68, 0.68);
+      ctx.restore();
+      // drawHuman handles translation internally — pass world pos
+      // We draw at ring position, facing inward (rot = angle toward center = a + PI)
+      ctx.save();
+      ctx.translate(rx, ry);
+      ctx.scale(0.68, 0.68);
+      ctx.translate(-rx, -ry);
+      // Drop shadow on ring
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.beginPath(); ctx.ellipse(rx + 2, ry + 3, 11, 8, 0, 0, TAU); ctx.fill();
+      ctx.restore();
+      // Draw the figure (facing center)
+      ctx.save();
+      ctx.translate(rx, ry); ctx.scale(0.68, 0.68); ctx.translate(-rx, -ry);
+      // inline mini-figure: body + hair top-down, facing inward
+      const rot = a + Math.PI;  // face toward center
+      ctx.save();
+      ctx.translate(rx, ry); ctx.rotate(rot + Math.PI / 2);
+      // body
+      ctx.fillStyle = pal.outfit;
+      ctx.beginPath(); ctx.ellipse(0, 4, 13, 17, 0, 0, TAU); ctx.fill();
+      // hem
+      ctx.fillStyle = pal.outfit + 'aa';
+      ctx.beginPath(); ctx.ellipse(0, 17, 13, 5, 0, 0, TAU); ctx.fill();
+      // hair circle (top-down)
+      ctx.fillStyle = pal.hair;
+      ctx.beginPath(); ctx.arc(0, -12, 12, 0, TAU); ctx.fill();
+      // arms reaching forward (toward Miss Li)
+      ctx.fillStyle = pal.skin;
+      ctx.beginPath(); ctx.ellipse(-9, -14, 4, 7, 0, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(9, -14, 4, 7, 0, 0, TAU); ctx.fill();
+      ctx.restore();
       ctx.restore();
     }
 
-    // ── draw helper: top-down human (rot = facing direction) ──────────────────
+    // ── Mic stand (top-down) ──────────────────────────────────────────────────
+    const msx = l5MicX2(), msy = l5MicY2();
+    ctx.fillStyle = '#1a1118'; ctx.beginPath(); ctx.ellipse(msx, msy+6, 18, 6, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#3a2848'; ctx.fillRect(msx-2, msy-30, 4, 36);
+    ctx.fillStyle = '#1f1a28'; ctx.beginPath(); ctx.ellipse(msx, msy-34, 7, 5, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#5a5468'; ctx.beginPath(); ctx.ellipse(msx-2, msy-36, 3, 3, 0, 0, TAU); ctx.fill();
+
+    // ── Spawn flashes ─────────────────────────────────────────────────────────
+    for (const s of l5Spawns) {
+      const a = Math.min(1, (0.9 - s.t) * 3) * Math.abs(Math.sin(s.t * 15));
+      ctx.save(); ctx.globalAlpha = a;
+      ctx.fillStyle = s.color; ctx.beginPath(); ctx.arc(s.wx, s.wy, 16, 0, TAU); ctx.fill();
+      ctx.restore();
+    }
+
+    // ── draw helper: top-down human ───────────────────────────────────────────
     const drawHuman = (
       hx: number, hy: number, rot: number,
       outfitC: string, accentC: string, hairC: string,
@@ -1199,66 +1352,58 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.translate(hx, hy);
-      ctx.rotate(rot + Math.PI / 2); // +90° so "forward" = up in local space
+      ctx.rotate(rot + Math.PI / 2);
 
       // Drop shadow
-      ctx.fillStyle = 'rgba(0,0,0,0.28)';
-      ctx.beginPath(); ctx.ellipse(3, 4, 14, 11, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.beginPath(); ctx.ellipse(3, 4, 14, 11, 0, 0, TAU); ctx.fill();
 
       // Shoes
       ctx.fillStyle = '#1a1018';
       ctx.beginPath(); ctx.ellipse(-4, 17, 4, 6, 0.15, 0, TAU); ctx.fill();
       ctx.beginPath(); ctx.ellipse(4, 17, 4, 6, -0.15, 0, TAU); ctx.fill();
 
-      // Outfit / dress body
-      ctx.fillStyle = outfitC;
-      ctx.beginPath(); ctx.ellipse(0, 4, 13, 17, 0, 0, TAU); ctx.fill();
-      // Hem accent
-      ctx.fillStyle = accentC;
-      ctx.beginPath(); ctx.ellipse(0, 17, 13, 5, 0, 0, TAU); ctx.fill();
+      // Outfit / dress body + hem
+      ctx.fillStyle = outfitC; ctx.beginPath(); ctx.ellipse(0, 4, 13, 17, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = accentC; ctx.beginPath(); ctx.ellipse(0, 17, 13, 5, 0, 0, TAU); ctx.fill();
 
       // Arms (skin)
       ctx.fillStyle = skinC;
       ctx.beginPath(); ctx.ellipse(-13, 0, 4, 8, 0.4, 0, TAU); ctx.fill();
       ctx.beginPath(); ctx.ellipse(13, 0, 4, 8, -0.4, 0, TAU); ctx.fill();
 
-      // Neck
-      ctx.fillStyle = skinC;
-      ctx.beginPath(); ctx.ellipse(0, -5, 4, 5, 0, 0, TAU); ctx.fill();
-
-      // Hair back volume
-      ctx.fillStyle = hairC;
-      ctx.beginPath(); ctx.ellipse(0, -13, 12, 10, 0, 0, TAU); ctx.fill();
       if (isMissLi) {
-        // Side flowing hair (left side, visible from above)
-        ctx.beginPath();
-        ctx.moveTo(-8, -10);
-        ctx.bezierCurveTo(-19, -10, -17, 4, -10, 9);
-        ctx.bezierCurveTo(-7, 3, -8, -6, -6, -10);
-        ctx.closePath(); ctx.fill();
-      }
-
-      // Head (face circle)
-      ctx.fillStyle = skinC;
-      ctx.beginPath(); ctx.arc(0, -10, 9, 0, TAU); ctx.fill();
-
-      // Eyes — two small dots
-      ctx.fillStyle = '#1a1320';
-      ctx.beginPath(); ctx.arc(-3, -13, 1.5, 0, TAU); ctx.fill();
-      ctx.beginPath(); ctx.arc(3, -13, 1.5, 0, TAU); ctx.fill();
-
-      if (isMissLi) {
-        // Red lips
-        ctx.fillStyle = '#c0394a';
-        ctx.beginPath(); ctx.arc(0, -9, 2.2, 0.1, Math.PI - 0.1); ctx.fill();
-        // Front hair / fringe over forehead
+        // Miss Li: full hair circle covers entire head — no face visible from top-down
         ctx.fillStyle = hairC;
-        ctx.beginPath(); ctx.ellipse(0, -18, 10, 5, 0, 0, TAU); ctx.fill();
-        // Earring (right ear)
-        ctx.fillStyle = '#f0d060';
-        ctx.beginPath(); ctx.arc(9, -9, 2.5, 0, TAU); ctx.fill();
+        ctx.beginPath(); ctx.arc(0, -12, 13, 0, TAU); ctx.fill();
+        // Side flowing hair
+        ctx.beginPath();
+        ctx.moveTo(-8, -10); ctx.bezierCurveTo(-19, -10, -17, 4, -10, 9);
+        ctx.bezierCurveTo(-7, 3, -8, -6, -6, -10); ctx.closePath(); ctx.fill();
+        // Hair depth strands
+        const hairDark = custom.hairMid || '#4a2a18';
+        ctx.strokeStyle = hairDark; ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+        for (let i = 0; i < 5; i++) {
+          const ha = (i / 5) * TAU + 0.3;
+          ctx.globalAlpha = alpha * 0.75;
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(ha) * 10, -12 + Math.sin(ha) * 10);
+          ctx.lineTo(Math.cos(ha) * 14, -12 + Math.sin(ha) * 14);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = alpha;
+        // Center part line
+        ctx.strokeStyle = hairDark; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(0, -22); ctx.lineTo(0, -8); ctx.stroke();
+        // Earring
+        ctx.fillStyle = '#f0d060'; ctx.beginPath(); ctx.arc(10, -8, 2.5, 0, TAU); ctx.fill();
       } else {
-        // Enemy: small mouth line
+        // Enemies: neck + head + eyes + mouth
+        ctx.fillStyle = skinC; ctx.beginPath(); ctx.ellipse(0, -5, 4, 5, 0, 0, TAU); ctx.fill();
+        ctx.fillStyle = hairC; ctx.beginPath(); ctx.ellipse(0, -13, 12, 10, 0, 0, TAU); ctx.fill();
+        ctx.fillStyle = skinC; ctx.beginPath(); ctx.arc(0, -10, 9, 0, TAU); ctx.fill();
+        ctx.fillStyle = '#1a1320';
+        ctx.beginPath(); ctx.arc(-3, -13, 1.5, 0, TAU); ctx.fill();
+        ctx.beginPath(); ctx.arc(3, -13, 1.5, 0, TAU); ctx.fill();
         ctx.strokeStyle = '#c08060'; ctx.lineWidth = 1.2; ctx.lineCap = 'round';
         ctx.beginPath(); ctx.moveTo(-2.5, -8); ctx.lineTo(2.5, -8); ctx.stroke();
       }
@@ -1348,19 +1493,15 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     // Particles
     drawParticles();
 
-    // HUD
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.beginPath(); ctx.roundRect(sx, 10, 200, 32, 8); ctx.fill();
-    ctx.fillStyle = '#f7efe2'; ctx.font = 'bold 14px "Inter", sans-serif'; ctx.textAlign = 'left';
-    ctx.fillText(`Eliminated: ${l5ElimCount} / ${L5_TOTAL}`, sx + 12, 31);
-
-    // Remaining alive count
+    // HUD (canvas overlay — React HUD handles score/progress)
     const alive = l5Enemies.filter(e => e.alive).length;
     if (alive > 0) {
-      ctx.fillStyle = 'rgba(200,50,80,0.7)';
-      ctx.beginPath(); ctx.roundRect(sx + sw - 130, 10, 120, 32, 8); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.textAlign = 'right';
-      ctx.fillText(`On stage: ${alive}`, sx + sw - 12, 31);
+      ctx.save();
+      ctx.fillStyle = 'rgba(200,50,80,0.65)';
+      ctx.beginPath(); ctx.roundRect(W / 2 - 70, 10, 140, 32, 8); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 14px "Inter", sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(`On stage: ${alive}`, W / 2, 31);
+      ctx.restore();
     }
   }
 
