@@ -99,7 +99,8 @@ const L7_FD_MAX_SPD   = 310;   // max platform scroll speed
 const L7_FD_H_SPEED   = 620;   // max horizontal ball speed
 const L7_FD_H_ACCEL   = 2200;  // horizontal acceleration
 const L7_FD_PLAT_H    = 24;    // platform physics/visual thickness
-const L7_FD_WIN_PLATS = 18;    // platforms to pass to win
+const L7_FD_WIN_PLATS = 36;    // platforms to pass to win
+const L7_OUTRO_DUR    = 4.5;  // outro animation duration (s)
 const L7_FD_GAP_WF    = 0.10;  // gap width fraction (normal)
 const L7_FD_GAP_WF_EZ = 0.14;  // gap width fraction (easy)
 const L7_FD_SPACING_F = 0.42;  // vertical spacing between platforms as fraction of H
@@ -1745,8 +1746,14 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   }
 
   // ── Level 7: Night Forest Falldown ─────────────────────────────────────────
-  type L7Phase = 'approach' | 'curl' | 'falldown';
+  type L7Phase = 'approach' | 'curl' | 'falldown' | 'outro';
   let l7Phase: L7Phase = 'approach';
+
+  // Outro state
+  let l7OutroT      = 0;
+  let l7OutroBallX  = 0;
+  let l7OutroBallY  = 0;
+  let l7OutroCharX  = 0;
 
   // Approach phase — character walks on forest platform and falls through hole
   let l7ApX        = 0;
@@ -1798,6 +1805,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
   function updateL7(dt: number) {
     if (l7Phase === 'approach') { updateL7Approach(dt); return; }
     if (l7Phase === 'curl')     { updateL7Curl(dt);     return; }
+    if (l7Phase === 'outro')    { updateL7Outro(dt);    return; }
     updateL7Falldown(dt);
 
   }
@@ -1919,7 +1927,8 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
       if (inG) {
         l7FdScorePlat(l7FdRidingPlat);
         l7FdRidingPlat = null;
-        l7FdBallVY = 50; // gentle launch downward
+        l7FdBallVY = 50;
+        if (l7Phase !== 'falldown') return;
       }
     } else {
       // Free-falling — check collision against current (pre-scroll) platform positions
@@ -1943,6 +1952,7 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
             break;
           } else if (inGap) {
             l7FdScorePlat(p);
+            if (l7Phase !== 'falldown') return;
             break;
           }
         }
@@ -2003,12 +2013,19 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     score = l7FdPassed * 12;
     cb.onScore(score);
     cb.onProgress(Math.min(1, l7FdPassed / L7_FD_WIN_PLATS));
-    if (l7FdPassed >= L7_FD_WIN_PLATS) winGame();
+    if (l7FdPassed >= L7_FD_WIN_PLATS) {
+      l7Phase = 'outro';
+      l7OutroT = 0;
+      l7OutroBallX = l7FdBallX;
+      l7OutroBallY = l7FdBallY;
+      l7OutroCharX = l7FdBallX;
+    }
   }
 
   function drawL7() {
     if (l7Phase === 'approach') { drawL7Approach(); return; }
     if (l7Phase === 'curl')     { drawL7Curl();     return; }
+    if (l7Phase === 'outro')    { drawL7Outro();    return; }
     drawL7Falldown();
   }
 
@@ -2278,6 +2295,130 @@ export function createGame(canvas: HTMLCanvasElement, cb: GameCallbacks, levelId
     const vg = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.4, W/2, H/2, Math.max(W,H)*0.82);
     vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(4,10,24,0.55)');
     ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  }
+
+  function updateL7Outro(dt: number) {
+    l7OutroT = Math.min(1, l7OutroT + dt / L7_OUTRO_DUR);
+    // Walk phase starts at t=0.45
+    if (l7OutroT >= 0.45) {
+      const micX = W * 0.72;
+      if (l7OutroCharX < micX) l7OutroCharX += 210 * dt;
+    }
+    if (l7OutroT >= 1) winGame();
+  }
+
+  function drawL7Outro() {
+    const t   = l7OutroT;
+    const gy  = groundY();
+    const micX = W * 0.72;
+
+    // Night forest backdrop
+    drawL7NightBG();
+
+    // Night ground (full-screen width, dark stone+moss)
+    drawL7NightGround(-10, W + 10);
+
+    // Speakers fade in
+    if (t > 0.65) {
+      ctx.globalAlpha = Math.min(1, (t - 0.65) / 0.15);
+      drawSpeaker(micX - 190, gy);
+      drawSpeaker(micX + 190, gy);
+      ctx.globalAlpha = 1;
+    }
+
+    // Mic stand fades in
+    if (t > 0.55) {
+      ctx.globalAlpha = Math.min(1, (t - 0.55) / 0.15);
+      drawMicStand(micX, gy);
+      ctx.globalAlpha = 1;
+    }
+
+    // Spotlight beam
+    if (t > 0.55) {
+      const beamA = Math.min(0.28, (t - 0.55) / 0.35 * 0.28);
+      const bg = ctx.createLinearGradient(micX, gy - 220, micX, gy);
+      bg.addColorStop(0, `rgba(255,240,200,${beamA})`);
+      bg.addColorStop(1, 'rgba(255,240,200,0)');
+      ctx.fillStyle = bg;
+      ctx.beginPath();
+      ctx.moveTo(micX - 14, gy - 220); ctx.lineTo(micX + 14, gy - 220);
+      ctx.lineTo(micX + 155, gy);     ctx.lineTo(micX - 155, gy);
+      ctx.closePath(); ctx.fill();
+    }
+
+    // Phase A (0–0.45): ball drops to ground and uncurls
+    if (t < 0.45) {
+      const dropT    = Math.min(1, t / 0.12);           // 0→1 during drop
+      const ballGndY = gy - L7_BALL_R;
+      const eased    = dropT * dropT * (3 - 2 * dropT); // smooth-step
+      const ballY    = l7OutroBallY + (ballGndY - l7OutroBallY) * eased;
+      const spin     = (l7FdSpinX / 55 + t * TAU * 2) % TAU;
+      const uncurlT  = Math.max(0, (t - 0.14) / 0.28);  // 0→1 during uncurl
+
+      if (uncurlT < 0.65) {
+        // Ball, slowing its spin
+        drawL7Ball(l7OutroCharX, ballY, spin * (1 - uncurlT / 0.65), 0);
+      } else {
+        // Morphing: ball → character
+        const morphT = (uncurlT - 0.65) / 0.35;
+        ctx.globalAlpha = 1 - morphT;
+        drawL7Ball(l7OutroCharX, ballY, 0, 0);
+        ctx.globalAlpha = morphT;
+        ctx.save();
+        ctx.translate(l7OutroCharX, gy);
+        renderMissLi(ctx, 0, 0, 0, 0, false, false, custom);
+        ctx.restore();
+        ctx.globalAlpha = 1;
+      }
+    } else {
+      // Phase B (0.45–1.0): character walks to mic
+      const atMic    = l7OutroCharX >= micX - 8;
+      const runT     = l7OutroT * 14;
+      const legSwing = atMic ? 0 : Math.sin(runT) * 0.9;
+      const armSwing = atMic ? 0 : Math.sin(runT + Math.PI) * 0.7;
+      const bounce   = atMic ? 0 : Math.abs(Math.sin(runT * 0.5)) * -2;
+      ctx.fillStyle = 'rgba(0,0,0,0.20)';
+      ctx.beginPath(); ctx.ellipse(l7OutroCharX, gy + 2, 18, 5, 0, 0, TAU); ctx.fill();
+      ctx.save();
+      ctx.translate(l7OutroCharX, gy + bounce);
+      ctx.rotate(atMic ? 0 : 0.08);
+      renderMissLi(ctx, 0, 0, legSwing, armSwing, false, atMic, custom);
+      ctx.restore();
+    }
+
+    drawVignette();
+  }
+
+  function drawL7NightGround(x1: number, x2: number) {
+    const gy = groundY();
+    const w  = x2 - x1; if (w <= 0) return;
+    // Stone body
+    const sg = ctx.createLinearGradient(0, gy, 0, gy + 50);
+    sg.addColorStop(0, '#2a2018'); sg.addColorStop(1, '#120c06');
+    ctx.fillStyle = sg; ctx.fillRect(x1, gy, w, H - gy);
+    // Stone seams
+    ctx.save(); ctx.globalAlpha = 0.15; ctx.fillStyle = '#0c0804';
+    const seams = Math.floor(w / 80);
+    for (let i = 1; i <= seams; i++) ctx.fillRect(x1 + w*i/(seams+1), gy+8, 2, 28);
+    ctx.restore();
+    // Moonlit sheen on stone
+    ctx.fillStyle = 'rgba(140,160,210,0.04)'; ctx.fillRect(x1, gy, w, H-gy);
+    // Moss cap
+    ctx.fillStyle = '#1c3010'; ctx.fillRect(x1, gy, w, 14);
+    ctx.fillStyle = '#2e4a1a'; ctx.fillRect(x1, gy, w, 6);
+    ctx.fillStyle = '#3d5e22'; ctx.fillRect(x1, gy, w, 2);
+    ctx.fillStyle = 'rgba(160,200,140,0.18)'; ctx.fillRect(x1, gy, w, 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(x1, gy+14, w, 3);
+    // Grass tufts
+    ctx.fillStyle = '#2e4a14';
+    const tufts = Math.max(3, Math.floor(w / 60));
+    for (let i = 0; i < tufts; i++) {
+      const gx = x1 + 10 + (w - 20) * (i / Math.max(1, tufts - 1));
+      ctx.beginPath();
+      ctx.moveTo(gx, gy); ctx.lineTo(gx-3, gy-7); ctx.lineTo(gx, gy-4);
+      ctx.lineTo(gx+3, gy-8); ctx.lineTo(gx+6, gy-3); ctx.lineTo(gx+8, gy);
+      ctx.closePath(); ctx.fill();
+    }
   }
 
   function drawL7NightPlatSection(x1: number, x2: number, sy: number) {
