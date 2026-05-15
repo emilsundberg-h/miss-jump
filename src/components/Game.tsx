@@ -92,10 +92,8 @@ export default function Game() {
     return DEFAULT_CUSTOM;
   });
   const [bests, setBests] = useState<Record<number, { easy?: number; normal?: number }>>(() => {
-    // TEMP: fake all cleared for preview
-    return { 1:{normal:1}, 2:{normal:3}, 3:{easy:2,normal:5}, 4:{normal:2}, 5:{easy:1}, 6:{normal:4}, 7:{easy:2,normal:3} };
-    // try { const s = localStorage.getItem('mj_bests'); if (s) return JSON.parse(s); } catch {}
-    // return {};
+    try { const s = localStorage.getItem('mj_bests'); if (s) return JSON.parse(s); } catch {}
+    return {};
   });
   const [state,    setState]    = useState<GameStateKind>("start");
   const [score,    setScore]    = useState(0);
